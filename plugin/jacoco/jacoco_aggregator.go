@@ -99,6 +99,19 @@ func (j *JacocoAggregator) Aggregate() error {
 	}
 	fmt.Println("==================== |AggregateData|: ====================")
 	fmt.Println(s)
+	pipelineId, buildNumber, err := utils.GetPipelineInfo()
+	if err != nil {
+		logrus.Println("Error getting pipeline info: %v", err)
+		return err
+	}
+
+	j.PersistToInfluxDb(pipelineId, buildNumber, aggregateData)
+
+	return nil
+}
+
+func (j *JacocoAggregator) PersistToInfluxDb(pipelineId, buildNumber string, aggregateData AggregateData) error {
+
 	return nil
 }
 

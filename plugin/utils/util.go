@@ -4,13 +4,20 @@
 
 package utils
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+)
 
 const (
 	JacocoTool = "jacoco"
 	JunitTool  = "junit"
 	NunitTool  = "nunit"
 	TestNgTool = "testng"
+
+	PipeLineIdEnvVar  = "HARNESS_PIPELINE_ID"
+	BuildNumberEnvVar = "HARNESS_BUILD_ID"
 )
 
 func ToStructFromJsonString[T any](jsonStr string) (T, error) {
@@ -27,4 +34,15 @@ func ToJsonStringFromStruct[T any](v T) (string, error) {
 	}
 
 	return "", err
+}
+
+func GetPipelineInfo() (string, string, error) {
+	pipelineId := os.Getenv(PipeLineIdEnvVar)
+	buildNumber := os.Getenv(BuildNumberEnvVar)
+
+	if pipelineId == "" || buildNumber == "" {
+		return "", "", fmt.Errorf("PipelineId or BuildNumber not found in the environment")
+	}
+
+	return pipelineId, buildNumber, nil
 }
