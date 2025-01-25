@@ -4,22 +4,35 @@
 
 package plugin
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // Args provides plugin execution arguments.
 type Args struct {
 	Pipeline
-
-	// Level defines the plugin log level.
 	Level string `envconfig:"PLUGIN_LOG_LEVEL"`
 
-	// TODO replace or remove
-	Param1 string `envconfig:"PLUGIN_PARAM1"`
-	Param2 string `envconfig:"PLUGIN_PARAM2"`
+	// plugin params
+	Tool           string `envconfig:"PLUGIN_TOOL"`
+	ReportsDir     string `envconfig:"PLUGIN_REPORTS_DIR"`
+	ReportsName    string `envconfig:"PLUGIN_REPORTS_NAME"`
+	IncludePattern string `envconfig:"PLUGIN_INCLUDE_PATTERN"`
 }
 
 // Exec executes the plugin.
 func Exec(ctx context.Context, args Args) error {
-	// write code here
+	fmt.Println("tool args.tool ", args.Tool)
+
+	switch args.Tool {
+	case JacocoTool:
+		aggregator := JacocoAggregator{
+			ReportsDir:  args.ReportsDir,
+			ReportsName: args.ReportsName,
+			Includes:    args.IncludePattern,
+		}
+		return aggregator.Aggregate()
+	}
 	return nil
 }
