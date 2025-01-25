@@ -7,6 +7,8 @@ package plugin
 import (
 	"context"
 	"fmt"
+	"harness-community/drone-test-result-aggregator/plugin/jacoco"
+	"harness-community/drone-test-result-aggregator/plugin/utils"
 )
 
 // Args provides plugin execution arguments.
@@ -26,8 +28,8 @@ func Exec(ctx context.Context, args Args) error {
 	fmt.Println("tool args.tool ", args.Tool)
 
 	switch args.Tool {
-	case JacocoTool:
-		aggregator := JacocoAggregator{
+	case utils.JacocoTool:
+		aggregator := jacoco.JacocoAggregator{
 			ReportsDir:  args.ReportsDir,
 			ReportsName: args.ReportsName,
 			Includes:    args.IncludePattern,
