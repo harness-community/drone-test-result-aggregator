@@ -11,6 +11,7 @@ import (
 	"harness-community/drone-test-result-aggregator/plugin/utils"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -213,7 +214,8 @@ func (j *JacocoAggregator) GetXmlReportData(
 
 	for _, xmlReportFile := range xmlReportFiles {
 		fmt.Println("Processing file: ", xmlReportFile)
-		report := ParseXMLReport(xmlReportFile)
+		tmpXmlReportFile := filepath.Join(reportsRootDir, xmlReportFile)
+		report := ParseXMLReport(tmpXmlReportFile)
 		reportBytes, err := json.Marshal(report)
 		if err != nil {
 			logrus.Println("Error marshalling report: %v", err)
