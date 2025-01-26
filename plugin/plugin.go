@@ -7,7 +7,6 @@ package plugin
 import (
 	"context"
 	"fmt"
-	"harness-community/drone-test-result-aggregator/plugin/jacoco"
 	"harness-community/drone-test-result-aggregator/plugin/utils"
 )
 
@@ -33,7 +32,11 @@ func Exec(ctx context.Context, args Args) error {
 
 	switch args.Tool {
 	case utils.JacocoTool:
-		aggregator := jacoco.GetNewJacocoAggregator(args.ReportsDir, args.ReportsName, args.IncludePattern,
+		aggregator := GetNewJacocoAggregator(args.ReportsDir, args.ReportsName, args.IncludePattern,
+			args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket)
+		return aggregator.Aggregate()
+	case utils.JunitTool:
+		aggregator := GetNewJunitAggregator(args.ReportsDir, args.ReportsName, args.IncludePattern,
 			args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket)
 		return aggregator.Aggregate()
 	}

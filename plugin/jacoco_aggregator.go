@@ -1,4 +1,4 @@
-package jacoco
+package plugin
 
 import (
 	"context"
@@ -22,7 +22,7 @@ type JacocoAggregator struct {
 	utils.DbCredentials
 }
 
-type AggregateData struct {
+type JacocoAggregateData struct {
 	utils.ResultBasicInfo
 	InstructionTotalSum   float64
 	InstructionCoveredSum float64
@@ -123,7 +123,7 @@ func (j *JacocoAggregator) Aggregate() error {
 		return err
 	}
 
-	aggregateData := AggregateData{}
+	aggregateData := JacocoAggregateData{}
 	aggregateData.calculateAggregate(xmlFileReportDataList)
 
 	pipelineId, buildNumber, err := utils.GetPipelineInfo()
@@ -140,7 +140,7 @@ func (j *JacocoAggregator) Aggregate() error {
 	return nil
 }
 
-func (j *JacocoAggregator) PersistToInfluxDb(pipelineId, buildNumber string, aggregateData AggregateData) error {
+func (j *JacocoAggregator) PersistToInfluxDb(pipelineId, buildNumber string, aggregateData JacocoAggregateData) error {
 
 	aggregateData.Type = utils.JacocoTool
 	aggregateData.PipelineId = pipelineId
@@ -232,7 +232,7 @@ func (j *JacocoAggregator) GetXmlReportData(
 	return xmlFileReportDataList, nil
 }
 
-func (a *AggregateData) calculateAggregate(reportsList []XmlFileReportData) {
+func (a *JacocoAggregateData) calculateAggregate(reportsList []XmlFileReportData) {
 	for _, report := range reportsList {
 		for _, counter := range report.Counters {
 			switch counter.Type {
