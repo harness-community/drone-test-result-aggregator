@@ -1,16 +1,19 @@
 package plugin
 
 import (
+	"context"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"github.com/bmatcuk/doublestar/v4"
+	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/sirupsen/logrus"
 	"harness-community/drone-test-result-aggregator/plugin/utils"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type JunitAggregator struct {
@@ -21,6 +24,7 @@ type JunitAggregator struct {
 }
 
 type JunitAggregatorData struct {
+	utils.ResultBasicInfo
 	XMLName   xml.Name `xml:"testsuite"`
 	Name      string   `xml:"name,attr"`
 	Tests     int      `xml:"tests,attr"`
@@ -49,6 +53,21 @@ func GetNewJunitAggregator(
 	}
 }
 
+func (j *JunitAggregator) GetDbUrl() string {
+	return j.DbCredentials.InfluxDBURL
+}
+
+func (j *JunitAggregator) GetDbToken() string {
+	return j.DbCredentials.InfluxDBToken
+}
+
+func (j *JunitAggregator) GetDbOrganization() string {
+	return j.DbCredentials.Organization
+}
+
+func (j *JunitAggregator) GetDbBucket() string {
+	return j.DbCredentials.Bucket
+}
 func (j *JunitAggregator) Aggregate() error {
 
 	reportsRootDir := j.ReportsDir
@@ -63,6 +82,47 @@ func (j *JunitAggregator) Aggregate() error {
 	totalAggregate := j.calculateAggregate(junitAggregatorDataList)
 	fmt.Println("Total Aggregate: ", totalAggregate)
 
+	pipelineId, buildNumber, err := utils.GetPipelineInfo()
+	if err != nil {
+		fmt.Println("Error getting pipeline info: ", err.Error())
+		return err
+	}
+
+	err = j.PersistToInfluxDb(pipelineId, buildNumber, totalAggregate)
+	return nil
+}
+
+func (j *JunitAggregator) PersistToInfluxDb(pipelineId, buildNumber string, aggregateData JunitAggregatorData) error {
+	aggregateData.Type = utils.JunitTool
+	aggregateData.PipelineId = pipelineId
+	aggregateData.BuildId = buildNumber
+
+	client := influxdb2.NewClient(j.GetDbUrl(), j.GetDbToken())
+	defer client.Close()
+
+	writeAPI := client.WriteAPIBlocking(j.GetDbOrganization(), j.GetDbBucket())
+	point := influxdb2.NewPoint(
+		aggregateData.Type,
+		map[string]string{
+			"pipeline_id": pipelineId,
+			"build_id":    buildNumber,
+			"name":        aggregateData.Name,
+			"type":        aggregateData.Type,
+			"status":      aggregateData.Status,
+		},
+		map[string]interface{}{
+			"tests":    aggregateData.Tests,
+			"skipped":  aggregateData.Skipped,
+			"failures": aggregateData.Failures,
+			"errors":   aggregateData.Errors,
+		},
+		time.Now())
+	err := writeAPI.WritePoint(context.Background(), point)
+	if err != nil {
+		fmt.Println("Error writing point: ", err)
+		return err
+	}
+	fmt.Println("Data persisted successfully to InfluxDB.")
 	return nil
 }
 

@@ -188,7 +188,6 @@ func (j *JacocoAggregator) PersistToInfluxDb(pipelineId, buildNumber string, agg
 		fmt.Println("Error writing point: ", err)
 		return err
 	}
-
 	fmt.Println("Data persisted successfully to InfluxDB.")
 	return nil
 }
