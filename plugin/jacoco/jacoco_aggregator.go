@@ -1,24 +1,29 @@
 package jacoco
 
 import (
+	"context"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"github.com/bmatcuk/doublestar/v4"
+	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/sirupsen/logrus"
 	"harness-community/drone-test-result-aggregator/plugin/utils"
 	"io"
 	"os"
 	"strings"
+	"time"
 )
 
 type JacocoAggregator struct {
 	ReportsDir  string
 	ReportsName string
 	Includes    string
+	utils.DbCredentials
 }
 
 type AggregateData struct {
+	utils.ResultBasicInfo
 	InstructionTotalSum   float64
 	InstructionCoveredSum float64
 	InstructionMissedSum  float64
@@ -76,13 +81,41 @@ type XmlFileReportData struct {
 	} `json:"Packages"`
 }
 
+func GetNewJacocoAggregator(reportsDir, reportsName, includes,
+	dbUrl, dbToken, organization, bucket string) JacocoAggregator {
+	return JacocoAggregator{
+		ReportsDir:  reportsDir,
+		ReportsName: reportsName,
+		Includes:    includes,
+		DbCredentials: utils.DbCredentials{
+			InfluxDBURL:   dbUrl,
+			InfluxDBToken: dbToken,
+			Organization:  organization,
+			Bucket:        bucket,
+		},
+	}
+}
+
+func (j *JacocoAggregator) GetDbUrl() string {
+	return j.InfluxDBURL
+}
+
+func (j *JacocoAggregator) GetDbToken() string {
+	return j.InfluxDBToken
+}
+
+func (j *JacocoAggregator) GetDbOrganization() string {
+	return j.Organization
+}
+
+func (j *JacocoAggregator) GetDbBucket() string {
+	return j.Bucket
+}
+
 func (j *JacocoAggregator) Aggregate() error {
-	fmt.Println("JacocoAggregator.Aggregate == ")
 
 	reportsRootDir := j.ReportsDir
 	patterns := strings.Split(j.Includes, ",")
-
-	fmt.Println("Include patterns: len(patterns) ", len(patterns))
 
 	xmlFileReportDataList, err := j.GetXmlReportData(reportsRootDir, patterns)
 	if err != nil {
@@ -93,25 +126,70 @@ func (j *JacocoAggregator) Aggregate() error {
 	aggregateData := AggregateData{}
 	aggregateData.calculateAggregate(xmlFileReportDataList)
 
-	s, err := utils.ToJsonStringFromStruct[AggregateData](aggregateData)
-	if err != nil {
-		logrus.Println("Error converting struct to json: %v", err)
-	}
-	fmt.Println("==================== |AggregateData|: ====================")
-	fmt.Println(s)
 	pipelineId, buildNumber, err := utils.GetPipelineInfo()
 	if err != nil {
 		logrus.Println("Error getting pipeline info: %v", err)
 		return err
 	}
 
-	j.PersistToInfluxDb(pipelineId, buildNumber, aggregateData)
-
+	err = j.PersistToInfluxDb(pipelineId, buildNumber, aggregateData)
+	if err != nil {
+		logrus.Println("Error persisting to influxdb: %v", err)
+		return err
+	}
 	return nil
 }
 
 func (j *JacocoAggregator) PersistToInfluxDb(pipelineId, buildNumber string, aggregateData AggregateData) error {
 
+	aggregateData.Type = utils.JacocoTool
+	aggregateData.PipelineId = pipelineId
+	aggregateData.BuildId = buildNumber
+
+	client := influxdb2.NewClient(j.GetDbUrl(), j.GetDbToken())
+	defer client.Close()
+
+	writeAPI := client.WriteAPIBlocking(j.GetDbOrganization(), j.GetDbBucket())
+
+	point := influxdb2.NewPoint(
+		aggregateData.Type,
+		map[string]string{
+			"pipeline_id": pipelineId,
+			"build_id":    buildNumber,
+			"name":        aggregateData.Name,
+			"type":        aggregateData.Type,
+			"status":      aggregateData.Status,
+		},
+		map[string]interface{}{
+			"instruction_total_sum":   aggregateData.InstructionTotalSum,
+			"instruction_covered_sum": aggregateData.InstructionCoveredSum,
+			"instruction_missed_sum":  aggregateData.InstructionMissedSum,
+			"branch_total_sum":        aggregateData.BranchTotalSum,
+			"branch_covered_sum":      aggregateData.BranchCoveredSum,
+			"branch_missed_sum":       aggregateData.BranchMissedSum,
+			"line_total_sum":          aggregateData.LineTotalSum,
+			"line_covered_sum":        aggregateData.LineCoveredSum,
+			"line_missed_sum":         aggregateData.LineMissedSum,
+			"complexity_total_sum":    aggregateData.ComplexityTotalSum,
+			"complexity_covered_sum":  aggregateData.ComplexityCoveredSum,
+			"complexity_missed_sum":   aggregateData.ComplexityMissedSum,
+			"method_total_sum":        aggregateData.MethodTotalSum,
+			"method_covered_sum":      aggregateData.MethodCoveredSum,
+			"method_missed_sum":       aggregateData.MethodMissedSum,
+			"class_total_sum":         aggregateData.ClassTotalSum,
+			"class_covered_sum":       aggregateData.ClassCoveredSum,
+			"class_missed_sum":        aggregateData.ClassMissedSum,
+		},
+		time.Now(),
+	)
+
+	err := writeAPI.WritePoint(context.Background(), point)
+	if err != nil {
+		fmt.Println("Error writing point: ", err)
+		return err
+	}
+
+	fmt.Println("Data persisted successfully to InfluxDB.")
 	return nil
 }
 

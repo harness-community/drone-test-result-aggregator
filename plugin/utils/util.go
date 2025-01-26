@@ -20,6 +20,21 @@ const (
 	BuildNumberEnvVar = "HARNESS_BUILD_ID"
 )
 
+type ResultBasicInfo struct {
+	PipelineId string
+	BuildId    string
+	Name       string
+	Type       string
+	Status     string
+}
+
+type DbCredentials struct {
+	InfluxDBURL   string
+	InfluxDBToken string
+	Organization  string
+	Bucket        string
+}
+
 func ToStructFromJsonString[T any](jsonStr string) (T, error) {
 	var v T
 	err := json.Unmarshal([]byte(jsonStr), &v)

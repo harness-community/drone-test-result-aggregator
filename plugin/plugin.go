@@ -21,6 +21,10 @@ type Args struct {
 	ReportsDir     string `envconfig:"PLUGIN_REPORTS_DIR"`
 	ReportsName    string `envconfig:"PLUGIN_REPORTS_NAME"`
 	IncludePattern string `envconfig:"PLUGIN_INCLUDE_PATTERN"`
+	DbUrl          string `envconfig:"PLUGIN_DB_URL"`
+	DbToken        string `envconfig:"PLUGIN_DB_TOKEN"`
+	DbOrg          string `envconfig:"PLUGIN_DB_ORG"`
+	DbBucket       string `envconfig:"PLUGIN_DB_BUCKET"`
 }
 
 // Exec executes the plugin.
@@ -29,11 +33,8 @@ func Exec(ctx context.Context, args Args) error {
 
 	switch args.Tool {
 	case utils.JacocoTool:
-		aggregator := jacoco.JacocoAggregator{
-			ReportsDir:  args.ReportsDir,
-			ReportsName: args.ReportsName,
-			Includes:    args.IncludePattern,
-		}
+		aggregator := jacoco.GetNewJacocoAggregator(args.ReportsDir, args.ReportsName, args.IncludePattern,
+			args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket)
 		return aggregator.Aggregate()
 	}
 	return nil
