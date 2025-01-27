@@ -7,7 +7,6 @@ package plugin
 import (
 	"context"
 	"fmt"
-	"harness-community/drone-test-result-aggregator/plugin/utils"
 )
 
 // Args provides plugin execution arguments.
@@ -31,14 +30,19 @@ func Exec(ctx context.Context, args Args) error {
 	fmt.Println("tool args.tool ", args.Tool)
 
 	switch args.Tool {
-	case utils.JacocoTool:
+	case JacocoTool:
 		aggregator := GetNewJacocoAggregator(args.ReportsDir, args.ReportsName, args.IncludePattern,
 			args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket)
 		return aggregator.Aggregate()
-	case utils.JunitTool:
+	case JunitTool:
 		aggregator := GetNewJunitAggregator(args.ReportsDir, args.ReportsName, args.IncludePattern,
 			args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket)
 		return aggregator.Aggregate()
+	case NunitTool:
+		aggregator := GetNewNunitAggregator(args.ReportsDir, args.ReportsName, args.IncludePattern,
+			args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket)
+		return aggregator.Aggregate()
 	}
+
 	return nil
 }

@@ -8,7 +8,6 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/sirupsen/logrus"
-	"harness-community/drone-test-result-aggregator/plugin/utils"
 	"io"
 	"os"
 	"path/filepath"
@@ -20,11 +19,11 @@ type JacocoAggregator struct {
 	ReportsDir  string
 	ReportsName string
 	Includes    string
-	utils.DbCredentials
+	DbCredentials
 }
 
 type JacocoAggregateData struct {
-	utils.ResultBasicInfo
+	ResultBasicInfo
 	InstructionTotalSum   float64
 	InstructionCoveredSum float64
 	InstructionMissedSum  float64
@@ -88,7 +87,7 @@ func GetNewJacocoAggregator(reportsDir, reportsName, includes,
 		ReportsDir:  reportsDir,
 		ReportsName: reportsName,
 		Includes:    includes,
-		DbCredentials: utils.DbCredentials{
+		DbCredentials: DbCredentials{
 			InfluxDBURL:   dbUrl,
 			InfluxDBToken: dbToken,
 			Organization:  organization,
@@ -127,7 +126,7 @@ func (j *JacocoAggregator) Aggregate() error {
 	aggregateData := JacocoAggregateData{}
 	aggregateData.calculateAggregate(xmlFileReportDataList)
 
-	pipelineId, buildNumber, err := utils.GetPipelineInfo()
+	pipelineId, buildNumber, err := GetPipelineInfo()
 	if err != nil {
 		logrus.Println("Error getting pipeline info: %v", err)
 		return err
@@ -143,7 +142,7 @@ func (j *JacocoAggregator) Aggregate() error {
 
 func (j *JacocoAggregator) PersistToInfluxDb(pipelineId, buildNumber string, aggregateData JacocoAggregateData) error {
 
-	aggregateData.Type = utils.JacocoTool
+	aggregateData.Type = JacocoTool
 	aggregateData.PipelineId = pipelineId
 	aggregateData.BuildId = buildNumber
 
@@ -221,7 +220,7 @@ func (j *JacocoAggregator) GetXmlReportData(
 			logrus.Println("Error marshalling report: %v", err)
 		}
 
-		xmlFileReport, err := utils.ToStructFromJsonString[XmlFileReportData](string(reportBytes))
+		xmlFileReport, err := ToStructFromJsonString[XmlFileReportData](string(reportBytes))
 		if err != nil {
 			logrus.Println("Error converting json to struct: %v", err)
 			return xmlFileReportDataList, err

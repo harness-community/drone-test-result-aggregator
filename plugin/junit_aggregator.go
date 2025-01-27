@@ -8,7 +8,6 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/sirupsen/logrus"
-	"harness-community/drone-test-result-aggregator/plugin/utils"
 	"io"
 	"os"
 	"path/filepath"
@@ -20,11 +19,11 @@ type JunitAggregator struct {
 	ReportsDir  string
 	ReportsName string
 	Includes    string
-	utils.DbCredentials
+	DbCredentials
 }
 
 type JunitAggregatorData struct {
-	utils.ResultBasicInfo
+	ResultBasicInfo
 	XMLName   xml.Name `xml:"testsuite"`
 	Name      string   `xml:"name,attr"`
 	Tests     int      `xml:"tests,attr"`
@@ -44,7 +43,7 @@ func GetNewJunitAggregator(
 		ReportsDir:  reportsDir,
 		ReportsName: reportsName,
 		Includes:    includes,
-		DbCredentials: utils.DbCredentials{
+		DbCredentials: DbCredentials{
 			InfluxDBURL:   dbUrl,
 			InfluxDBToken: dbToken,
 			Organization:  dbOrg,
@@ -82,7 +81,7 @@ func (j *JunitAggregator) Aggregate() error {
 	totalAggregate := j.calculateAggregate(junitAggregatorDataList)
 	fmt.Println("Total Aggregate: ", totalAggregate)
 
-	pipelineId, buildNumber, err := utils.GetPipelineInfo()
+	pipelineId, buildNumber, err := GetPipelineInfo()
 	if err != nil {
 		fmt.Println("Error getting pipeline info: ", err.Error())
 		return err
@@ -93,7 +92,7 @@ func (j *JunitAggregator) Aggregate() error {
 }
 
 func (j *JunitAggregator) PersistToInfluxDb(pipelineId, buildNumber string, aggregateData JunitAggregatorData) error {
-	aggregateData.Type = utils.JunitTool
+	aggregateData.Type = JunitTool
 	aggregateData.PipelineId = pipelineId
 	aggregateData.BuildId = buildNumber
 
@@ -172,7 +171,7 @@ func GetXmlReportData[T any](reportsRootDir string, patterns []string) ([]T, err
 			logrus.Println("Error marshalling report: %v", err)
 		}
 
-		xmlFileReport, err := utils.ToStructFromJsonString[T](string(reportBytes))
+		xmlFileReport, err := ToStructFromJsonString[T](string(reportBytes))
 		if err != nil {
 			fmt.Println("Error converting json to struct: %v", err)
 			logrus.Println("Error converting json to struct: %v", err)
