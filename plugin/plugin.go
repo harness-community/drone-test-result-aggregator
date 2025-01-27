@@ -42,6 +42,10 @@ func Exec(ctx context.Context, args Args) error {
 		aggregator := GetNewNunitAggregator(args.ReportsDir, args.ReportsName, args.IncludePattern,
 			args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket)
 		return aggregator.Aggregate()
+	case TestNgTool:
+		aggregator := GetNewTestNgAggregator(args.ReportsDir, args.ReportsName, args.IncludePattern,
+			args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket)
+		return aggregator.Aggregate()
 	}
 
 	return nil
