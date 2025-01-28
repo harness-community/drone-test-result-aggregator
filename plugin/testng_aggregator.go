@@ -69,12 +69,46 @@ func (t *TestNgAggregator) Aggregate() error {
 	return err
 }
 
-func (t *TestNgAggregator) PersistToInfluxDb(pipelineId, buildNumber string, aggregateData TestNGResults) error {
-	return nil
+func (t *TestNgAggregator) PersistToInfluxDb(pipelineId, buildNumber string,
+	aggregateData TestNGResults) error {
+
+	tagsMap := map[string]string{
+		"pipelineId": pipelineId,
+		"buildId":    buildNumber,
+	}
+	fieldsMap := map[string]interface{}{
+		"ignored": aggregateData.Ignored,
+		"total":   aggregateData.Total,
+		"passed":  aggregateData.Passed,
+		"failed":  aggregateData.Failed,
+		"skipped": aggregateData.Skipped,
+	}
+
+	err := PersistToInfluxDb(t.GetDbUrl(), t.GetDbToken(), t.GetDbOrganization(), t.GetDbBucket(),
+		TestNgTool, tagsMap, fieldsMap)
+	if err != nil {
+		fmt.Println("Error persisting to influxdb: ", err.Error())
+	}
+	return err
+}
+
+func (t *TestNgAggregator) GetDbUrl() string {
+	return t.DbCredentials.InfluxDBURL
+}
+
+func (t *TestNgAggregator) GetDbToken() string {
+	return t.DbCredentials.InfluxDBToken
+}
+
+func (t *TestNgAggregator) GetDbOrganization() string {
+	return t.DbCredentials.Organization
+}
+
+func (t *TestNgAggregator) GetDbBucket() string {
+	return t.DbCredentials.Bucket
 }
 
 func (t *TestNgAggregator) calculateAggregate(testNgAggregatorList []TestNGResults) TestNGResults {
-
 	aggregatorData := TestNGResults{}
 
 	for _, testNgAggregatorData := range testNgAggregatorList {
