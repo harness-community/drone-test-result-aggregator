@@ -23,7 +23,6 @@ func TestJunitAggregator_Aggregate(t *testing.T) {
 	}
 
 	for k := range expectedTagsMap {
-		fmt.Printf("k: |%v|, tagsMap[k]: |%v|, expectedTagsMap[k]: %v\n", k, tagsMap[k], expectedTagsMap[k])
 		if tagsMap[k] != expectedTagsMap[k] {
 			t.Errorf("Mismatch in TagsMap for key %q: got %v, expected %v", k, tagsMap[k], expectedTagsMap[k])
 		}

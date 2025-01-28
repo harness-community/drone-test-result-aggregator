@@ -18,7 +18,6 @@ func MockAggregate[T any](xmlReportStr string,
 	aggregatorList := MockParseXmlReport[T](xmlReportStr)
 
 	totalAggregate := calculateAggregate(aggregatorList)
-	fmt.Println("Total Aggregate: ", totalAggregate)
 
 	tagsMap, fieldsMap := getDataMaps(mockPipelineId, mockBuildNumber, totalAggregate)
 
