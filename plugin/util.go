@@ -10,6 +10,7 @@ import (
 	"fmt"
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -36,6 +37,36 @@ type DbCredentials struct {
 	InfluxDBToken string
 	Organization  string
 	Bucket        string
+}
+
+func Aggregate[T any](reportsDir, includes string,
+	dbUrl, dbToken, dbOrg, dbBucket, measurementName string,
+	calculateAggregate func(testNgAggregatorList []T) T,
+	getDataMaps func(pipelineId, buildNumber string,
+	aggregateData T) (map[string]string, map[string]interface{})) error {
+
+	reportsRootDir := reportsDir
+	patterns := strings.Split(includes, ",")
+
+	aggregatorList, err := GetXmlReportData[T](reportsRootDir, patterns)
+	if err != nil {
+		fmt.Println("Error getting xml report data: ", err.Error())
+		return err
+	}
+
+	totalAggregate := calculateAggregate(aggregatorList)
+	fmt.Println("Total Aggregate: ", totalAggregate)
+
+	pipelineId, buildNumber, err := GetPipelineInfo()
+	if err != nil {
+		fmt.Println("Error getting pipeline info: ", err.Error())
+		return err
+	}
+
+	tagsMap, fieldsMap := getDataMaps(pipelineId, buildNumber, totalAggregate)
+	err = PersistToInfluxDb(dbUrl, dbToken, dbOrg, dbBucket, measurementName, tagsMap, fieldsMap)
+
+	return err
 }
 
 func PersistToInfluxDb(dbUrl, dbToken, dbOrganisation, dbBucket, measurementName string,

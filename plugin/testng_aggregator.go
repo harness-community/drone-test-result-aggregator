@@ -3,7 +3,6 @@ package plugin
 import (
 	"encoding/xml"
 	"fmt"
-	"strings"
 )
 
 type TestNgAggregator struct {
@@ -40,75 +39,14 @@ func GetNewTestNgAggregator(
 func (t *TestNgAggregator) Aggregate() error {
 	fmt.Println("TestNgAggregator Aggregator Aggregate")
 
-	reportsRootDir := t.ReportsDir
-	patterns := strings.Split(t.Includes, ",")
-
-	testNgAggregatorList, err := GetXmlReportData[TestNGResults](reportsRootDir, patterns)
-	if err != nil {
-		fmt.Println("Error getting xml report data: ", err.Error())
-		return err
-	}
-
-	totalAggregate := t.calculateAggregate(testNgAggregatorList)
-	fmt.Println("Total Aggregate: ", totalAggregate)
-
-	s, err := ToJsonStringFromStruct[TestNGResults](totalAggregate)
-	if err != nil {
-		fmt.Println("Error converting struct to json string: ", err.Error())
-		return err
-	}
-	fmt.Println("Total Aggregate in json: ", s)
-
-	pipelineId, buildNumber, err := GetPipelineInfo()
-	if err != nil {
-		fmt.Println("Error getting pipeline info: ", err.Error())
-		return err
-	}
-
-	err = t.PersistToInfluxDb(pipelineId, buildNumber, totalAggregate)
+	err := Aggregate[TestNGResults](t.ReportsDir, t.Includes,
+		t.DbCredentials.InfluxDBURL, t.DbCredentials.InfluxDBToken,
+		t.DbCredentials.Organization, t.DbCredentials.Bucket, TestNgTool,
+		CalculateTestNgAggregate, GetTestNgDataMaps)
 	return err
 }
 
-func (t *TestNgAggregator) PersistToInfluxDb(pipelineId, buildNumber string,
-	aggregateData TestNGResults) error {
-
-	tagsMap := map[string]string{
-		"pipelineId": pipelineId,
-		"buildId":    buildNumber,
-	}
-	fieldsMap := map[string]interface{}{
-		"ignored": aggregateData.Ignored,
-		"total":   aggregateData.Total,
-		"passed":  aggregateData.Passed,
-		"failed":  aggregateData.Failed,
-		"skipped": aggregateData.Skipped,
-	}
-
-	err := PersistToInfluxDb(t.GetDbUrl(), t.GetDbToken(), t.GetDbOrganization(), t.GetDbBucket(),
-		TestNgTool, tagsMap, fieldsMap)
-	if err != nil {
-		fmt.Println("Error persisting to influxdb: ", err.Error())
-	}
-	return err
-}
-
-func (t *TestNgAggregator) GetDbUrl() string {
-	return t.DbCredentials.InfluxDBURL
-}
-
-func (t *TestNgAggregator) GetDbToken() string {
-	return t.DbCredentials.InfluxDBToken
-}
-
-func (t *TestNgAggregator) GetDbOrganization() string {
-	return t.DbCredentials.Organization
-}
-
-func (t *TestNgAggregator) GetDbBucket() string {
-	return t.DbCredentials.Bucket
-}
-
-func (t *TestNgAggregator) calculateAggregate(testNgAggregatorList []TestNGResults) TestNGResults {
+func CalculateTestNgAggregate(testNgAggregatorList []TestNGResults) TestNGResults {
 	aggregatorData := TestNGResults{}
 
 	for _, testNgAggregatorData := range testNgAggregatorList {
@@ -120,4 +58,20 @@ func (t *TestNgAggregator) calculateAggregate(testNgAggregatorList []TestNGResul
 	}
 
 	return aggregatorData
+}
+
+func GetTestNgDataMaps(pipelineId, buildNumber string,
+	aggregateData TestNGResults) (map[string]string, map[string]interface{}) {
+	tagsMap := map[string]string{
+		"pipelineId": pipelineId,
+		"buildId":    buildNumber,
+	}
+	fieldsMap := map[string]interface{}{
+		"ignored": aggregateData.Ignored,
+		"total":   aggregateData.Total,
+		"passed":  aggregateData.Passed,
+		"failed":  aggregateData.Failed,
+		"skipped": aggregateData.Skipped,
+	}
+	return tagsMap, fieldsMap
 }
