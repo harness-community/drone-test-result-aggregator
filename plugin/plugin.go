@@ -23,6 +23,7 @@ type Args struct {
 	DbToken        string `envconfig:"PLUGIN_DB_TOKEN"`
 	DbOrg          string `envconfig:"PLUGIN_DB_ORG"`
 	DbBucket       string `envconfig:"PLUGIN_DB_BUCKET"`
+	GroupName      string `envconfig:"PLUGIN_GROUP"`
 }
 
 // Exec executes the plugin.

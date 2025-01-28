@@ -87,11 +87,42 @@ func (n *NunitAggregator) Aggregate() error {
 	}
 
 	err = n.PersistToInfluxDb(pipelineId, buildNumber, totalAggregate)
+	if err != nil {
+		fmt.Println("Error persisting to influxdb: ", err.Error())
+	}
 	return err
 }
 
 func (n *NunitAggregator) PersistToInfluxDb(pipelineId, buildNumber string, aggregateData ResultSummary) error {
-	return nil
+	tagsMap := map[string]string{
+		"pipelineId": pipelineId,
+		"buildId":    buildNumber,
+	}
+	fieldsMap := map[string]interface{}{
+		"outcome":             aggregateData.Outcome,
+		"total":               aggregateData.Counters.Total,
+		"executed":            aggregateData.Counters.Executed,
+		"passed":              aggregateData.Counters.Passed,
+		"failed":              aggregateData.Counters.Failed,
+		"error":               aggregateData.Counters.Error,
+		"timeout":             aggregateData.Counters.Timeout,
+		"aborted":             aggregateData.Counters.Aborted,
+		"inconclusive":        aggregateData.Counters.Inconclusive,
+		"passedButRunAborted": aggregateData.Counters.PassedButRunAborted,
+		"notRunnable":         aggregateData.Counters.NotRunnable,
+		"notExecuted":         aggregateData.Counters.NotExecuted,
+		"disconnected":        aggregateData.Counters.Disconnected,
+		"warning":             aggregateData.Counters.Warning,
+		"completed":           aggregateData.Counters.Completed,
+		"inProgress":          aggregateData.Counters.InProgress,
+		"pending":             aggregateData.Counters.Pending,
+	}
+
+	err := PersistToInfluxDb(n.DbCredentials.InfluxDBURL, n.DbCredentials.InfluxDBToken,
+		n.DbCredentials.Organization, n.DbCredentials.Bucket, NunitTool,
+		tagsMap, fieldsMap)
+
+	return err
 }
 func (n *NunitAggregator) calculateAggregate(nunitAggregatorDataList []TestRun) ResultSummary {
 

@@ -5,9 +5,12 @@
 package plugin
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"os"
+	"time"
 )
 
 const (
@@ -33,6 +36,27 @@ type DbCredentials struct {
 	InfluxDBToken string
 	Organization  string
 	Bucket        string
+}
+
+func PersistToInfluxDb(dbUrl, dbToken, dbOrganisation, dbBucket, measurementName string,
+	tagsMap map[string]string, fieldsMap map[string]interface{}) error {
+
+	client := influxdb2.NewClient(dbUrl, dbToken)
+	defer client.Close()
+
+	writeAPI := client.WriteAPIBlocking(dbOrganisation, dbBucket)
+	point := influxdb2.NewPoint(
+		measurementName,
+		tagsMap,
+		fieldsMap,
+		time.Now())
+	err := writeAPI.WritePoint(context.Background(), point)
+	if err != nil {
+		fmt.Println("Error writing point: ", err)
+		return err
+	}
+	fmt.Println("Data persisted successfully to InfluxDB.")
+	return nil
 }
 
 func ToStructFromJsonString[T any](jsonStr string) (T, error) {
