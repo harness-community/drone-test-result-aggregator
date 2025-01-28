@@ -73,14 +73,12 @@ func GetXmlReportData[T any](reportsRootDir string, patterns []string) ([]T, err
 		report := ParseXmlReport[T](tmpXmlReportFile)
 		reportBytes, err := json.Marshal(report)
 		if err != nil {
-			fmt.Println("Error marshalling report: %v", err)
-			logrus.Println("Error marshalling report: %v", err)
+			logrus.Printf("Error marshalling report: %v", err)
 		}
 
 		xmlFileReport, err := ToStructFromJsonString[T](string(reportBytes))
 		if err != nil {
-			fmt.Println("Error converting json to struct: %v", err)
-			logrus.Println("Error converting json to struct: %v", err)
+			logrus.Printf("Error converting json to struct: %v", err)
 			return xmlFileReportDataList, err
 		}
 
@@ -106,7 +104,7 @@ func ParseXmlReport[T any](filename string) T {
 	var report T
 	err = xml.Unmarshal(data, &report)
 	if err != nil {
-		fmt.Println("Error unmarshalling XML: %v", err)
+		logrus.Printf("Error unmarshalling XML: %v", err)
 	}
 	return report
 }
