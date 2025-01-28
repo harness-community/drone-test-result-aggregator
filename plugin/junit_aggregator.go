@@ -1,12 +1,8 @@
 package plugin
 
 import (
-	//"context"
 	"encoding/xml"
 	"fmt"
-	//influxdb2 "github.com/influxdata/influxdb-client-go/v2"
-	//"strings"
-	//"time"
 )
 
 type JunitAggregator struct {

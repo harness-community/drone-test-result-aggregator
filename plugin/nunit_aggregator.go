@@ -3,7 +3,6 @@ package plugin
 import (
 	"encoding/xml"
 	"fmt"
-	"strings"
 )
 
 type NunitAggregator struct {
@@ -61,107 +60,63 @@ func (n *NunitAggregator) Aggregate() error {
 
 	fmt.Println("Nunit Aggregator Aggregate")
 
-	reportsRootDir := n.ReportsDir
-	patterns := strings.Split(n.Includes, ",")
+	err := Aggregate[TestRun](n.ReportsDir, n.Includes,
+		n.DbCredentials.InfluxDBURL, n.DbCredentials.InfluxDBToken,
+		n.DbCredentials.Organization, n.DbCredentials.Bucket, NunitTool,
+		CalculateNugetAggregate, GetNunitDataMaps)
 
-	nunitAggregatorDataList, err := GetXmlReportData[TestRun](reportsRootDir, patterns)
-	if err != nil {
-		fmt.Println("Error getting xml report data: ", err.Error())
-		return err
-	}
-
-	totalAggregate := n.calculateAggregate(nunitAggregatorDataList)
-	fmt.Println("Total Aggregate: ", totalAggregate)
-
-	s, err := ToJsonStringFromStruct[ResultSummary](totalAggregate)
-	if err != nil {
-		fmt.Println("Error converting struct to json string: ", err.Error())
-		return err
-	}
-	fmt.Println("Total Aggregate in json: ", s)
-
-	pipelineId, buildNumber, err := GetPipelineInfo()
-	if err != nil {
-		fmt.Println("Error getting pipeline info: ", err.Error())
-		return err
-	}
-
-	err = n.PersistToInfluxDb(pipelineId, buildNumber, totalAggregate)
-	if err != nil {
-		fmt.Println("Error persisting to influxdb: ", err.Error())
-	}
 	return err
 }
 
-func (n *NunitAggregator) PersistToInfluxDb(pipelineId, buildNumber string, aggregateData ResultSummary) error {
+func CalculateNugetAggregate(nunitAggregatorList []TestRun) TestRun {
+	aggregatorData := TestRun{}
+
+	for _, nunitAggregatorData := range nunitAggregatorList {
+		aggregatorData.ResultSummary.Outcome = nunitAggregatorData.ResultSummary.Outcome
+		aggregatorData.ResultSummary.Counters.Total += nunitAggregatorData.ResultSummary.Counters.Total
+		aggregatorData.ResultSummary.Counters.Executed += nunitAggregatorData.ResultSummary.Counters.Executed
+		aggregatorData.ResultSummary.Counters.Passed += nunitAggregatorData.ResultSummary.Counters.Passed
+		aggregatorData.ResultSummary.Counters.Failed += nunitAggregatorData.ResultSummary.Counters.Failed
+		aggregatorData.ResultSummary.Counters.Error += nunitAggregatorData.ResultSummary.Counters.Error
+		aggregatorData.ResultSummary.Counters.Timeout += nunitAggregatorData.ResultSummary.Counters.Timeout
+		aggregatorData.ResultSummary.Counters.Aborted += nunitAggregatorData.ResultSummary.Counters.Aborted
+		aggregatorData.ResultSummary.Counters.Inconclusive += nunitAggregatorData.ResultSummary.Counters.Inconclusive
+		aggregatorData.ResultSummary.Counters.PassedButRunAborted += nunitAggregatorData.ResultSummary.Counters.PassedButRunAborted
+		aggregatorData.ResultSummary.Counters.NotRunnable += nunitAggregatorData.ResultSummary.Counters.NotRunnable
+		aggregatorData.ResultSummary.Counters.NotExecuted += nunitAggregatorData.ResultSummary.Counters.NotExecuted
+		aggregatorData.ResultSummary.Counters.Disconnected += nunitAggregatorData.ResultSummary.Counters.Disconnected
+		aggregatorData.ResultSummary.Counters.Warning += nunitAggregatorData.ResultSummary.Counters.Warning
+		aggregatorData.ResultSummary.Counters.Completed += nunitAggregatorData.ResultSummary.Counters.Completed
+		aggregatorData.ResultSummary.Counters.InProgress += nunitAggregatorData.ResultSummary.Counters.InProgress
+		aggregatorData.ResultSummary.Counters.Pending += nunitAggregatorData.ResultSummary.Counters.Pending
+	}
+	return aggregatorData
+}
+
+func GetNunitDataMaps(pipelineId, buildNumber string,
+	aggregateData TestRun) (map[string]string, map[string]interface{}) {
 	tagsMap := map[string]string{
 		"pipelineId": pipelineId,
 		"buildId":    buildNumber,
 	}
 	fieldsMap := map[string]interface{}{
-		"outcome":             aggregateData.Outcome,
-		"total":               aggregateData.Counters.Total,
-		"executed":            aggregateData.Counters.Executed,
-		"passed":              aggregateData.Counters.Passed,
-		"failed":              aggregateData.Counters.Failed,
-		"error":               aggregateData.Counters.Error,
-		"timeout":             aggregateData.Counters.Timeout,
-		"aborted":             aggregateData.Counters.Aborted,
-		"inconclusive":        aggregateData.Counters.Inconclusive,
-		"passedButRunAborted": aggregateData.Counters.PassedButRunAborted,
-		"notRunnable":         aggregateData.Counters.NotRunnable,
-		"notExecuted":         aggregateData.Counters.NotExecuted,
-		"disconnected":        aggregateData.Counters.Disconnected,
-		"warning":             aggregateData.Counters.Warning,
-		"completed":           aggregateData.Counters.Completed,
-		"inProgress":          aggregateData.Counters.InProgress,
-		"pending":             aggregateData.Counters.Pending,
+		"outcome":             aggregateData.ResultSummary.Outcome,
+		"total":               aggregateData.ResultSummary.Counters.Total,
+		"executed":            aggregateData.ResultSummary.Counters.Executed,
+		"passed":              aggregateData.ResultSummary.Counters.Passed,
+		"failed":              aggregateData.ResultSummary.Counters.Failed,
+		"error":               aggregateData.ResultSummary.Counters.Error,
+		"timeout":             aggregateData.ResultSummary.Counters.Timeout,
+		"aborted":             aggregateData.ResultSummary.Counters.Aborted,
+		"inconclusive":        aggregateData.ResultSummary.Counters.Inconclusive,
+		"passedButRunAborted": aggregateData.ResultSummary.Counters.PassedButRunAborted,
+		"notRunnable":         aggregateData.ResultSummary.Counters.NotRunnable,
+		"notExecuted":         aggregateData.ResultSummary.Counters.NotExecuted,
+		"disconnected":        aggregateData.ResultSummary.Counters.Disconnected,
+		"warning":             aggregateData.ResultSummary.Counters.Warning,
+		"completed":           aggregateData.ResultSummary.Counters.Completed,
+		"inProgress":          aggregateData.ResultSummary.Counters.InProgress,
+		"pending":             aggregateData.ResultSummary.Counters.Pending,
 	}
-
-	err := PersistToInfluxDb(n.DbCredentials.InfluxDBURL, n.DbCredentials.InfluxDBToken,
-		n.DbCredentials.Organization, n.DbCredentials.Bucket, NunitTool,
-		tagsMap, fieldsMap)
-
-	return err
-}
-func (n *NunitAggregator) calculateAggregate(nunitAggregatorDataList []TestRun) ResultSummary {
-
-	aggregatorData := ResultSummary{}
-
-	for _, nunitAggregatorData := range nunitAggregatorDataList {
-		aggregatorData.Outcome = nunitAggregatorData.ResultSummary.Outcome
-		aggregatorData.Counters.Total += nunitAggregatorData.ResultSummary.Counters.Total
-		aggregatorData.Counters.Executed += nunitAggregatorData.ResultSummary.Counters.Executed
-		aggregatorData.Counters.Passed += nunitAggregatorData.ResultSummary.Counters.Passed
-		aggregatorData.Counters.Failed += nunitAggregatorData.ResultSummary.Counters.Failed
-		aggregatorData.Counters.Error += nunitAggregatorData.ResultSummary.Counters.Error
-		aggregatorData.Counters.Timeout += nunitAggregatorData.ResultSummary.Counters.Timeout
-		aggregatorData.Counters.Aborted += nunitAggregatorData.ResultSummary.Counters.Aborted
-		aggregatorData.Counters.Inconclusive += nunitAggregatorData.ResultSummary.Counters.Inconclusive
-		aggregatorData.Counters.PassedButRunAborted += nunitAggregatorData.ResultSummary.Counters.PassedButRunAborted
-		aggregatorData.Counters.NotRunnable += nunitAggregatorData.ResultSummary.Counters.NotRunnable
-		aggregatorData.Counters.NotExecuted += nunitAggregatorData.ResultSummary.Counters.NotExecuted
-		aggregatorData.Counters.Disconnected += nunitAggregatorData.ResultSummary.Counters.Disconnected
-		aggregatorData.Counters.Warning += nunitAggregatorData.ResultSummary.Counters.Warning
-		aggregatorData.Counters.Completed += nunitAggregatorData.ResultSummary.Counters.Completed
-		aggregatorData.Counters.InProgress += nunitAggregatorData.ResultSummary.Counters.InProgress
-		aggregatorData.Counters.Pending += nunitAggregatorData.ResultSummary.Counters.Pending
-	}
-	return aggregatorData
-}
-
-func (n *NunitAggregator) GetDbUrl() string {
-	return n.DbCredentials.InfluxDBURL
-}
-
-func (n *NunitAggregator) GetDbToken() string {
-	return n.DbCredentials.InfluxDBToken
-}
-
-func (n *NunitAggregator) GetDbOrganization() string {
-	return n.DbCredentials.Organization
-}
-
-func (n *NunitAggregator) GetDbBucket() string {
-	return n.DbCredentials.Bucket
+	return tagsMap, fieldsMap
 }
