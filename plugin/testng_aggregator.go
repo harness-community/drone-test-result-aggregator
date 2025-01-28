@@ -2,7 +2,7 @@ package plugin
 
 import (
 	"encoding/xml"
-	"fmt"
+	"github.com/sirupsen/logrus"
 )
 
 type TestNgAggregator struct {
@@ -36,12 +36,12 @@ func GetNewTestNgAggregator(
 	}
 }
 
-func (t *TestNgAggregator) Aggregate() error {
-	fmt.Println("TestNgAggregator Aggregator Aggregate")
+func (t *TestNgAggregator) Aggregate(groupName string) error {
+	logrus.Println("TestNgAggregator Aggregator Aggregate")
 
 	err := Aggregate[TestNGResults](t.ReportsDir, t.Includes,
 		t.DbCredentials.InfluxDBURL, t.DbCredentials.InfluxDBToken,
-		t.DbCredentials.Organization, t.DbCredentials.Bucket, TestNgTool,
+		t.DbCredentials.Organization, t.DbCredentials.Bucket, TestNgTool, groupName,
 		CalculateTestNgAggregate, GetTestNgDataMaps)
 	return err
 }

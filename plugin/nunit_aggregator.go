@@ -2,7 +2,7 @@ package plugin
 
 import (
 	"encoding/xml"
-	"fmt"
+	"github.com/sirupsen/logrus"
 )
 
 type NunitAggregator struct {
@@ -56,13 +56,13 @@ func GetNewNunitAggregator(
 	}
 }
 
-func (n *NunitAggregator) Aggregate() error {
+func (n *NunitAggregator) Aggregate(groupName string) error {
 
-	fmt.Println("Nunit Aggregator Aggregate")
+	logrus.Println("Nunit Aggregator Aggregate")
 
 	err := Aggregate[TestRun](n.ReportsDir, n.Includes,
 		n.DbCredentials.InfluxDBURL, n.DbCredentials.InfluxDBToken,
-		n.DbCredentials.Organization, n.DbCredentials.Bucket, NunitTool,
+		n.DbCredentials.Organization, n.DbCredentials.Bucket, NunitTool, groupName,
 		CalculateNugetAggregate, GetNunitDataMaps)
 
 	return err

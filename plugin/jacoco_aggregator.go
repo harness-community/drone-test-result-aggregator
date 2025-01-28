@@ -2,7 +2,7 @@ package plugin
 
 import (
 	"encoding/xml"
-	"fmt"
+	"github.com/sirupsen/logrus"
 )
 
 type JacocoAggregator struct {
@@ -67,11 +67,11 @@ func GetNewJacocoAggregator(reportsDir, reportsName, includes,
 	}
 }
 
-func (j *JacocoAggregator) Aggregate() error {
-	fmt.Println("Jacoco Aggregator Aggregate")
+func (j *JacocoAggregator) Aggregate(groupName string) error {
+	logrus.Println("Jacoco Aggregator Aggregate")
 	err := Aggregate[Report](j.ReportsDir, j.Includes,
 		j.DbCredentials.InfluxDBURL, j.DbCredentials.InfluxDBToken,
-		j.DbCredentials.Organization, j.DbCredentials.Bucket, JacocoTool,
+		j.DbCredentials.Organization, j.DbCredentials.Bucket, JacocoTool, groupName,
 		CalculateJacocoAggregate, GetJacocoDataMaps)
 	return err
 }
@@ -108,7 +108,8 @@ func CalculateJacocoAggregate(reportsList []Report) Report {
 	return xmlFileReportData
 }
 
-func GetJacocoDataMaps(pipelineId, buildNumber string, aggregateData Report) (map[string]string, map[string]interface{}) {
+func GetJacocoDataMaps(pipelineId, buildNumber string,
+	aggregateData Report) (map[string]string, map[string]interface{}) {
 	tagMap := map[string]string{
 		"pipelineId": pipelineId,
 		"buildId":    buildNumber,

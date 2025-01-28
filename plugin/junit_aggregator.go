@@ -2,7 +2,7 @@ package plugin
 
 import (
 	"encoding/xml"
-	"fmt"
+	"github.com/sirupsen/logrus"
 )
 
 type JunitAggregator struct {
@@ -42,11 +42,11 @@ func GetNewJunitAggregator(
 	}
 }
 
-func (j *JunitAggregator) Aggregate() error {
-	fmt.Println("JunitAggregator Aggregator Aggregate")
+func (j *JunitAggregator) Aggregate(groupName string) error {
+	logrus.Println("JunitAggregator Aggregator Aggregate")
 	err := Aggregate[JunitAggregatorData](j.ReportsDir, j.Includes,
 		j.DbCredentials.InfluxDBURL, j.DbCredentials.InfluxDBToken,
-		j.DbCredentials.Organization, j.DbCredentials.Bucket, JunitTool,
+		j.DbCredentials.Organization, j.DbCredentials.Bucket, JunitTool, groupName,
 		CalculateJunitAggregate, GetJunitDataMaps)
 	return err
 }

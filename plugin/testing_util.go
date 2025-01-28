@@ -2,7 +2,6 @@ package plugin
 
 import (
 	"encoding/xml"
-	"fmt"
 	"github.com/sirupsen/logrus"
 )
 
@@ -29,7 +28,7 @@ func MockParseXmlReport[T any](xmlStr string) []T {
 	var report T
 	err := xml.Unmarshal(data, &report)
 	if err != nil {
-		fmt.Printf("Error unmarshalling XML: %v", err)
+		logrus.Printf("Error unmarshalling XML: %v", err)
 		logrus.Fatalf("Error unmarshalling XML: %v", err)
 	}
 	return []T{report}

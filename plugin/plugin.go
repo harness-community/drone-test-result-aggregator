@@ -6,7 +6,7 @@ package plugin
 
 import (
 	"context"
-	"fmt"
+	"github.com/sirupsen/logrus"
 )
 
 // Args provides plugin execution arguments.
@@ -16,6 +16,7 @@ type Args struct {
 
 	// plugin params
 	Tool           string `envconfig:"PLUGIN_TOOL"`
+	Command        string `envconfig:"PLUGIN_COMMAND"`
 	ReportsDir     string `envconfig:"PLUGIN_REPORTS_DIR"`
 	ReportsName    string `envconfig:"PLUGIN_REPORTS_NAME"`
 	IncludePattern string `envconfig:"PLUGIN_INCLUDE_PATTERN"`
@@ -28,26 +29,27 @@ type Args struct {
 
 // Exec executes the plugin.
 func Exec(ctx context.Context, args Args) error {
-	fmt.Println("tool args.tool ", args.Tool)
+	logrus.Println("tool args.tool ", args.Tool)
 
-	switch args.Tool {
-	case JacocoTool:
-		aggregator := GetNewJacocoAggregator(args.ReportsDir, args.ReportsName, args.IncludePattern,
-			args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket)
-		return aggregator.Aggregate()
-	case JunitTool:
-		aggregator := GetNewJunitAggregator(args.ReportsDir, args.ReportsName, args.IncludePattern,
-			args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket)
-		return aggregator.Aggregate()
-	case NunitTool:
-		aggregator := GetNewNunitAggregator(args.ReportsDir, args.ReportsName, args.IncludePattern,
-			args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket)
-		return aggregator.Aggregate()
-	case TestNgTool:
-		aggregator := GetNewTestNgAggregator(args.ReportsDir, args.ReportsName, args.IncludePattern,
-			args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket)
-		return aggregator.Aggregate()
+	if args.Command == SaveToDb {
+		switch args.Tool {
+		case JacocoTool:
+			aggregator := GetNewJacocoAggregator(args.ReportsDir, args.ReportsName, args.IncludePattern,
+				args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket)
+			return aggregator.Aggregate(args.GroupName)
+		case JunitTool:
+			aggregator := GetNewJunitAggregator(args.ReportsDir, args.ReportsName, args.IncludePattern,
+				args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket)
+			return aggregator.Aggregate(args.GroupName)
+		case NunitTool:
+			aggregator := GetNewNunitAggregator(args.ReportsDir, args.ReportsName, args.IncludePattern,
+				args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket)
+			return aggregator.Aggregate(args.GroupName)
+		case TestNgTool:
+			aggregator := GetNewTestNgAggregator(args.ReportsDir, args.ReportsName, args.IncludePattern,
+				args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket)
+			return aggregator.Aggregate(args.GroupName)
+		}
 	}
-
 	return nil
 }

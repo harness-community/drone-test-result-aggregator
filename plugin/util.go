@@ -20,11 +20,11 @@ import (
 )
 
 const (
-	JacocoTool = "jacoco"
-	JunitTool  = "junit"
-	NunitTool  = "nunit"
-	TestNgTool = "testng"
-
+	JacocoTool        = "jacoco"
+	JunitTool         = "junit"
+	NunitTool         = "nunit"
+	TestNgTool        = "testng"
+	SaveToDb          = "save-to-db"
 	PipeLineIdEnvVar  = "HARNESS_PIPELINE_ID"
 	BuildNumberEnvVar = "HARNESS_BUILD_ID"
 )
@@ -46,14 +46,14 @@ type DbCredentials struct {
 
 func GetXmlReportData[T any](reportsRootDir string, patterns []string) ([]T, error) {
 
-	fmt.Println("GetXmlReportData: reportsRootDir ==  ", reportsRootDir)
+	logrus.Println("GetXmlReportData: reportsRootDir ==  ", reportsRootDir)
 
 	var xmlReportFiles []string
 	var xmlFileReportDataList []T
 
 	for _, pattern := range patterns {
-		fmt.Println("junit: pattern ==  ", pattern)
-		fmt.Println("junit: reportsRootDir ==  ", reportsRootDir)
+		logrus.Println("junit: pattern ==  ", pattern)
+		logrus.Println("junit: reportsRootDir ==  ", reportsRootDir)
 		tmpReportDir := os.DirFS(reportsRootDir)
 		relPattern := strings.TrimPrefix(pattern, reportsRootDir+"/")
 		filesList, err := doublestar.Glob(tmpReportDir, relPattern)
@@ -64,11 +64,11 @@ func GetXmlReportData[T any](reportsRootDir string, patterns []string) ([]T, err
 		xmlReportFiles = append(xmlReportFiles, filesList...)
 	}
 
-	fmt.Println("xmlReportFiles ==  ", xmlReportFiles)
-	fmt.Println("len(xmlReportFiles) ", len(xmlReportFiles))
+	logrus.Println("xmlReportFiles ==  ", xmlReportFiles)
+	logrus.Println("len(xmlReportFiles) ", len(xmlReportFiles))
 
 	for _, xmlReportFile := range xmlReportFiles {
-		fmt.Println("Processing junit result file: ", xmlReportFile)
+		logrus.Println("Processing junit result file: ", xmlReportFile)
 		tmpXmlReportFile := filepath.Join(reportsRootDir, xmlReportFile)
 		report := ParseXmlReport[T](tmpXmlReportFile)
 		reportBytes, err := json.Marshal(report)
@@ -91,14 +91,14 @@ func GetXmlReportData[T any](reportsRootDir string, patterns []string) ([]T, err
 func ParseXmlReport[T any](filename string) T {
 	file, err := os.Open(filename)
 	if err != nil {
-		fmt.Println("Error opening XML file: ", err)
+		logrus.Println("Error opening XML file: ", err)
 		logrus.Fatalf("Error opening XML file: %v", err)
 	}
 	defer file.Close()
 
 	data, err := io.ReadAll(file)
 	if err != nil {
-		fmt.Println("Error reading XML file ", err)
+		logrus.Println("Error reading XML file ", err)
 	}
 
 	var report T
@@ -110,7 +110,7 @@ func ParseXmlReport[T any](filename string) T {
 }
 
 func Aggregate[T any](reportsDir, includes string,
-	dbUrl, dbToken, dbOrg, dbBucket, measurementName string,
+	dbUrl, dbToken, dbOrg, dbBucket, measurementName, groupName string,
 	calculateAggregate func(testNgAggregatorList []T) T,
 	getDataMaps func(pipelineId, buildNumber string,
 		aggregateData T) (map[string]string, map[string]interface{})) error {
@@ -120,32 +120,34 @@ func Aggregate[T any](reportsDir, includes string,
 
 	aggregatorList, err := GetXmlReportData[T](reportsRootDir, patterns)
 	if err != nil {
-		fmt.Println("Error getting xml report data: ", err.Error())
+		logrus.Println("Error getting xml report data: ", err.Error())
 		return err
 	}
 
 	totalAggregate := calculateAggregate(aggregatorList)
-	fmt.Println("Total Aggregate: ", totalAggregate)
+	logrus.Println("Total Aggregate: ", totalAggregate)
 
 	pipelineId, buildNumber, err := GetPipelineInfo()
 	if err != nil {
-		fmt.Println("Error getting pipeline info: ", err.Error())
+		logrus.Println("Error getting pipeline info: ", err.Error())
 		return err
 	}
 
 	tagsMap, fieldsMap := getDataMaps(pipelineId, buildNumber, totalAggregate)
-	err = PersistToInfluxDb(dbUrl, dbToken, dbOrg, dbBucket, measurementName, tagsMap, fieldsMap)
+	err = PersistToInfluxDb(dbUrl, dbToken, dbOrg, dbBucket, measurementName, groupName, tagsMap, fieldsMap)
 
 	return err
 }
 
-func PersistToInfluxDb(dbUrl, dbToken, dbOrganisation, dbBucket, measurementName string,
+func PersistToInfluxDb(dbUrl, dbToken, dbOrganisation, dbBucket, measurementName, groupName string,
 	tagsMap map[string]string, fieldsMap map[string]interface{}) error {
+
+	tagsMap["group"] = groupName
 
 	client := influxdb2.NewClient(dbUrl, dbToken)
 	defer client.Close()
-
 	writeAPI := client.WriteAPIBlocking(dbOrganisation, dbBucket)
+
 	point := influxdb2.NewPoint(
 		measurementName,
 		tagsMap,
@@ -153,10 +155,10 @@ func PersistToInfluxDb(dbUrl, dbToken, dbOrganisation, dbBucket, measurementName
 		time.Now())
 	err := writeAPI.WritePoint(context.Background(), point)
 	if err != nil {
-		fmt.Println("Error writing point: ", err)
+		logrus.Println("Error writing point: ", err)
 		return err
 	}
-	fmt.Println("Data persisted successfully to InfluxDB.")
+	logrus.Println("Data persisted successfully to InfluxDB.")
 	return nil
 }
 
