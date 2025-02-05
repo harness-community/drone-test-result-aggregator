@@ -75,27 +75,32 @@ func StoreResultsToInfluxDb(args Args) error {
 }
 
 func CompareBuildResults(args Args) error {
-
 	var retMap map[string]interface{}
-
-	fmt.Println("Tool: ", args.Tool)
 	var err error
+
 	switch args.Tool {
 	case JacocoTool:
-		fmt.Println(">>>>>>>>>>>>>>>>>>>>>>>>>>>> jacoco ")
 		retMap, err = CompareResults(JacocoTool, args)
+	case JunitTool:
+		retMap, err = CompareResults(JunitTool, args)
+	case NunitTool:
+		retMap, err = CompareResults(NunitTool, args)
+	case TestNgTool:
+		retMap, err = CompareResults(TestNgTool, args)
 	default:
 		errStr := fmt.Sprintf("Tool type %s not supported to compare builds", args.Tool)
 		return errors.New(errStr)
 	}
-	// convert map to json
+
 	jsonBytes, err := json.Marshal(retMap)
 	if err != nil {
 		logrus.Println("Error converting map to json: ", err)
 		return err
 	}
 
-	fmt.Println("UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU")
-	fmt.Println(string(jsonBytes))
+	resultsDiffStr := string(jsonBytes)
+	fmt.Println(string(resultsDiffStr))
+	err = WriteToEnvVariable("BUILD_RESULTS_DIFF", resultsDiffStr)
+
 	return err
 }

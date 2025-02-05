@@ -300,23 +300,23 @@ func GetComparedDifferences(measurementName, influxURL, token, org, bucket, curr
 	client := influxdb2.NewClient(influxURL, token)
 	defer client.Close()
 
-	currentValues, err := fetchBuildFieldValues(client, org, bucket, measurementName, currentPipelineId, groupId, currentBuildId)
+	currentValues, err := GetStoredBuildResults(client, org, bucket, measurementName, currentPipelineId, groupId, currentBuildId)
 	if err != nil {
 		fmt.Println("GetComparedDifferences Error fetching current build values: ", err)
 		return nil, fmt.Errorf("error fetching current build values: %w", err)
 	}
 
-	previousValues, err := fetchBuildFieldValues(client, org, bucket, measurementName, currentPipelineId, groupId, previousBuildId)
+	previousValues, err := GetStoredBuildResults(client, org, bucket, measurementName, currentPipelineId, groupId, previousBuildId)
 	if err != nil {
 		fmt.Println("GetComparedDifferences Error fetching previous build values: ", err)
 		return nil, fmt.Errorf("error fetching previous build values: %w", err)
 	}
 
-	return computeDifferences(currentBuildId, previousBuildId, currentPipelineId, groupId,
+	return ComputeBuildResultDifferences(currentBuildId, previousBuildId, currentPipelineId, groupId,
 		currentValues, previousValues), nil
 }
 
-func fetchBuildFieldValues(client influxdb2.Client, org, bucket, measurementName,
+func GetStoredBuildResults(client influxdb2.Client, org, bucket, measurementName,
 	pipelineId, groupId, buildId string) (map[string]float64, error) {
 
 	fmt.Println("fetchBuildFieldValues: enter")
@@ -359,8 +359,8 @@ func fetchBuildFieldValues(client influxdb2.Client, org, bucket, measurementName
 	return fieldValues, nil
 }
 
-func computeDifferences(currentBuildId, previousBuildId, pipelineId, groupId string,
-	currentValues, previousValues map[string]float64) map[string]interface{} {
+func ComputeBuildResultDifferences(currentBuildId, previousBuildId, pipelineId,
+	groupId string, currentValues, previousValues map[string]float64) map[string]interface{} {
 
 	fmt.Println("computeDifferences: enter")
 
@@ -415,4 +415,22 @@ func computeDifferences(currentBuildId, previousBuildId, pipelineId, groupId str
 	diffResultMap["result_differences"] = resultDiffs
 
 	return diffResultMap
+}
+
+func WriteToEnvVariable(key string, value interface{}) error {
+
+	outputFile, err := os.OpenFile(os.Getenv("DRONE_OUTPUT"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open output file: %w", err)
+	}
+	defer outputFile.Close()
+
+	valueStr := fmt.Sprintf("%v", value)
+
+	_, err = fmt.Fprintf(outputFile, "%s=%s\n", key, valueStr)
+	if err != nil {
+		return fmt.Errorf("failed to write to env: %w", err)
+	}
+
+	return nil
 }
