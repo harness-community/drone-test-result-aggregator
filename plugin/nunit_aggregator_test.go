@@ -2,6 +2,8 @@ package plugin
 
 import (
 	"fmt"
+	"math"
+	"sort"
 	"testing"
 )
 
@@ -102,3 +104,93 @@ Test 'IgnoredTest' was skipped in the test run.
     </Output>
   </ResultSummary>
 </TestRun>`
+
+func TestComputeNunitBuildResultDifferences(t *testing.T) {
+	currentBuildId := "5"
+	previousBuildId := "4"
+	pipelineId := "test_pipeline"
+	groupId := "test_group"
+
+	currentValues := map[string]float64{
+		"total":               100,
+		"executed":            95,
+		"passed":              90,
+		"failed":              5,
+		"error":               1,
+		"timeout":             0,
+		"aborted":             0,
+		"inconclusive":        2,
+		"passedButRunAborted": 0,
+		"notRunnable":         1,
+		"notExecuted":         1,
+		"disconnected":        0,
+		"warning":             3,
+		"completed":           95,
+		"inProgress":          2,
+		"pending":             3,
+	}
+
+	previousValues := map[string]float64{
+		"total":               100,
+		"executed":            95,
+		"passed":              90,
+		"failed":              5,
+		"error":               1,
+		"timeout":             0,
+		"aborted":             0,
+		"inconclusive":        2,
+		"passedButRunAborted": 0,
+		"notRunnable":         1,
+		"notExecuted":         1,
+		"disconnected":        0,
+		"warning":             3,
+		"completed":           95,
+		"inProgress":          2,
+		"pending":             3,
+	}
+
+	// Expected result differences
+	expectedResultDiffs := []ResultDiff{}
+	for field, currValue := range currentValues {
+		prevValue := previousValues[field]
+
+		expectedResultDiffs = append(expectedResultDiffs, ResultDiff{
+			FieldName:            field,
+			CurrentBuildValue:    currValue,
+			PreviousBuildValue:   prevValue,
+			Difference:           currValue - prevValue,
+			PercentageDifference: 0, // Since values are identical, percentage difference is 0
+			IsCompareValid:       true,
+		})
+	}
+
+	result := ComputeBuildResultDifferences(currentBuildId, previousBuildId, pipelineId, groupId, currentValues, previousValues)
+
+	resultDiffs, ok := result["result_differences"].([]ResultDiff)
+	if !ok {
+		t.Fatalf("Expected []ResultDiff, got %T", result["result_differences"])
+	}
+
+	sort.Slice(expectedResultDiffs, func(i, j int) bool {
+		return expectedResultDiffs[i].FieldName < expectedResultDiffs[j].FieldName
+	})
+	sort.Slice(resultDiffs, func(i, j int) bool {
+		return resultDiffs[i].FieldName < resultDiffs[j].FieldName
+	})
+
+	if len(resultDiffs) != len(expectedResultDiffs) {
+		t.Fatalf("Expected %d results, got %d", len(expectedResultDiffs), len(resultDiffs))
+	}
+
+	for i, expected := range expectedResultDiffs {
+		actual := resultDiffs[i]
+		if actual.FieldName != expected.FieldName ||
+			actual.CurrentBuildValue != expected.CurrentBuildValue ||
+			actual.PreviousBuildValue != expected.PreviousBuildValue ||
+			actual.Difference != expected.Difference ||
+			math.Abs(actual.PercentageDifference-expected.PercentageDifference) > 0.0001 || // Allow minor floating-point precision errors
+			actual.IsCompareValid != expected.IsCompareValid {
+			t.Errorf("Mismatch at index %d: got %+v, expected %+v", i, actual, expected)
+		}
+	}
+}

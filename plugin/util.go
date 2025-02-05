@@ -143,7 +143,7 @@ func Aggregate[T any](reportsDir, includes string,
 	dbUrl, dbToken, dbOrg, dbBucket, measurementName, groupName string,
 	calculateAggregate func(testNgAggregatorList []T) T,
 	getDataMaps func(pipelineId, buildNumber string,
-	aggregateData T) (map[string]string, map[string]interface{})) error {
+		aggregateData T) (map[string]string, map[string]interface{})) error {
 
 	reportsRootDir := reportsDir
 	patterns := strings.Split(includes, ",")
