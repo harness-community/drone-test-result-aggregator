@@ -402,11 +402,6 @@ func ComputeBuildResultDifferences(currentBuildId, previousBuildId, pipelineId,
 		})
 	}
 
-	for _, diff := range resultDiffs {
-		fmt.Printf("Field: %s, Current: %.2f, Previous: %.2f, Diff: %.2f, %%Diff: %.2f\n",
-			diff.FieldName, diff.CurrentBuildValue, diff.PreviousBuildValue, diff.Difference, diff.PercentageDifference)
-	}
-
 	diffResultMap := map[string]interface{}{}
 	diffResultMap["current_build_id"] = currentBuildId
 	diffResultMap["previous_build_id"] = previousBuildId

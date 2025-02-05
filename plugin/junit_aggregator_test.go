@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"fmt"
+	"reflect"
 	"testing"
 )
 
@@ -53,3 +54,40 @@ const JunitReportXml = `<?xml version="1.0" encoding="UTF-8"?>
  <testcase name="add(int, int, int)[3]" classname="com.example.project.CalculatorTests" time="0.002"/>
  <testcase name="add(int, int, int)[4]" classname="com.example.project.CalculatorTests" time="0.001"/>
 </testsuite>`
+
+func TestGetJunitDataMaps(t *testing.T) {
+	pipelineId := "test_pipeline"
+	buildNumber := "5"
+
+	aggregateData := JunitAggregatorData{
+		Name:     "JUnit Test Suite",
+		Tests:    100,
+		Skipped:  5,
+		Failures: 2,
+		Errors:   1,
+	}
+
+	expectedTagsMap := map[string]string{
+		"pipeline_id": pipelineId,
+		"build_id":    buildNumber,
+		"name":        "JUnit Test Suite",
+		"type":        "",
+		"status":      "",
+	}
+
+	expectedFieldsMap := map[string]interface{}{
+		"tests":    100,
+		"skipped":  5,
+		"failures": 2,
+		"errors":   1,
+	}
+
+	tagsMap, fieldsMap := GetJunitDataMaps(pipelineId, buildNumber, aggregateData)
+	if !reflect.DeepEqual(tagsMap, expectedTagsMap) {
+		t.Errorf("tagsMap mismatch.\nExpected: %+v\nGot: %+v", expectedTagsMap, tagsMap)
+	}
+
+	if !reflect.DeepEqual(fieldsMap, expectedFieldsMap) {
+		t.Errorf("fieldsMap mismatch.\nExpected: %+v\nGot: %+v", expectedFieldsMap, fieldsMap)
+	}
+}
