@@ -6,7 +6,7 @@ package plugin
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"github.com/sirupsen/logrus"
@@ -75,32 +75,34 @@ func StoreResultsToInfluxDb(args Args) error {
 }
 
 func CompareBuildResults(args Args) error {
-	var retMap map[string]interface{}
+	var resultStr string
 	var err error
 
 	switch args.Tool {
 	case JacocoTool:
-		retMap, err = CompareResults(JacocoTool, args)
+		resultStr, err = CompareResults(JacocoTool, args)
 	case JunitTool:
-		retMap, err = CompareResults(JunitTool, args)
+		resultStr, err = CompareResults(JunitTool, args)
 	case NunitTool:
-		retMap, err = CompareResults(NunitTool, args)
+		resultStr, err = CompareResults(NunitTool, args)
 	case TestNgTool:
-		retMap, err = CompareResults(TestNgTool, args)
+		resultStr, err = CompareResults(TestNgTool, args)
 	default:
 		errStr := fmt.Sprintf("Tool type %s not supported to compare builds", args.Tool)
 		return errors.New(errStr)
 	}
 
-	jsonBytes, err := json.Marshal(retMap)
 	if err != nil {
-		logrus.Println("Error converting map to json: ", err)
+		logrus.Println("Unable to compare results ", err)
 		return err
 	}
 
-	resultsDiffStr := string(jsonBytes)
-	fmt.Println(string(resultsDiffStr))
-	err = WriteToEnvVariable("BUILD_RESULTS_DIFF", resultsDiffStr)
-
+	resultStr = ConvertToBase64(resultStr)
+	err = WriteToEnvVariable("BUILD_RESULTS_DIFF", resultStr)
 	return err
+}
+
+func ConvertToBase64(input string) string {
+	encoded := base64.StdEncoding.EncodeToString([]byte(input))
+	return encoded
 }

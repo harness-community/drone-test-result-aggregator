@@ -143,7 +143,7 @@ func Aggregate[T any](reportsDir, includes string,
 	dbUrl, dbToken, dbOrg, dbBucket, measurementName, groupName string,
 	calculateAggregate func(testNgAggregatorList []T) T,
 	getDataMaps func(pipelineId, buildNumber string,
-		aggregateData T) (map[string]string, map[string]interface{})) error {
+	aggregateData T) (map[string]string, map[string]interface{})) error {
 
 	reportsRootDir := reportsDir
 	patterns := strings.Split(includes, ",")
@@ -272,28 +272,31 @@ func GetPreviousBuildId(measurementName, influxURL, token, org, bucket, currentP
 	return 0, fmt.Errorf("no previous build ID found for %d", currentBuild)
 }
 
-func CompareResults(tool string, args Args) (map[string]interface{}, error) {
-	var resultsDiffMap map[string]interface{}
-
+func CompareResults(tool string, args Args) (string, error) {
+	var resultStr string
 	fmt.Println("CompareResults Tool: ", tool)
 	currentPipelineId, currentBuildNumber, err := GetPipelineInfo()
 	if err != nil {
 		fmt.Println("CompareResults Error getting pipeline info: ", err)
-		return resultsDiffMap, err
+		return resultStr, err
 	}
 
 	previousBuildId, err := GetPreviousBuildId(tool, args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket, currentPipelineId, args.GroupName, currentBuildNumber)
 	if err != nil {
 		fmt.Println("CompareResults Error getting previous build id: ", err)
-		return resultsDiffMap, err
+		return resultStr, err
 	}
 	fmt.Println("Previous Build Id: ", previousBuildId)
 
-	resultsDiffMap, err = GetComparedDifferences("jacoco", args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket, currentPipelineId, args.GroupName, currentBuildNumber, strconv.Itoa(previousBuildId))
-	return resultsDiffMap, nil
+	resultStr, err = GetComparedDifferences(tool, args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket, currentPipelineId, args.GroupName, currentBuildNumber, strconv.Itoa(previousBuildId))
+	if err != nil {
+		fmt.Println("CompareResults Error getting compared differences: ", err)
+		return resultStr, err
+	}
+	return resultStr, nil
 }
 
-func GetComparedDifferences(measurementName, influxURL, token, org, bucket, currentPipelineId, groupId, currentBuildId, previousBuildId string) (map[string]interface{}, error) {
+func GetComparedDifferences(measurementName, influxURL, token, org, bucket, currentPipelineId, groupId, currentBuildId, previousBuildId string) (string, error) {
 
 	fmt.Println("GetComparedDifferences: enter")
 
@@ -303,17 +306,16 @@ func GetComparedDifferences(measurementName, influxURL, token, org, bucket, curr
 	currentValues, err := GetStoredBuildResults(client, org, bucket, measurementName, currentPipelineId, groupId, currentBuildId)
 	if err != nil {
 		fmt.Println("GetComparedDifferences Error fetching current build values: ", err)
-		return nil, fmt.Errorf("error fetching current build values: %w", err)
+		return "", fmt.Errorf("error fetching current build values: %w", err)
 	}
 
 	previousValues, err := GetStoredBuildResults(client, org, bucket, measurementName, currentPipelineId, groupId, previousBuildId)
 	if err != nil {
 		fmt.Println("GetComparedDifferences Error fetching previous build values: ", err)
-		return nil, fmt.Errorf("error fetching previous build values: %w", err)
+		return "", fmt.Errorf("error fetching previous build values: %w", err)
 	}
 
-	return ComputeBuildResultDifferences(currentBuildId, previousBuildId, currentPipelineId, groupId,
-		currentValues, previousValues), nil
+	return ComputeBuildResultDifferences(currentValues, previousValues), nil
 }
 
 func GetStoredBuildResults(client influxdb2.Client, org, bucket, measurementName,
@@ -359,8 +361,7 @@ func GetStoredBuildResults(client influxdb2.Client, org, bucket, measurementName
 	return fieldValues, nil
 }
 
-func ComputeBuildResultDifferences(currentBuildId, previousBuildId, pipelineId,
-	groupId string, currentValues, previousValues map[string]float64) map[string]interface{} {
+func ComputeBuildResultDifferences(currentValues, previousValues map[string]float64) string {
 
 	fmt.Println("computeDifferences: enter")
 
@@ -402,14 +403,19 @@ func ComputeBuildResultDifferences(currentBuildId, previousBuildId, pipelineId,
 		})
 	}
 
-	diffResultMap := map[string]interface{}{}
-	diffResultMap["current_build_id"] = currentBuildId
-	diffResultMap["previous_build_id"] = previousBuildId
-	diffResultMap["pipeline_id"] = pipelineId
-	diffResultMap["group_id"] = groupId
-	diffResultMap["result_differences"] = resultDiffs
+	resultFormat := "ResultType, CurrentBuild, PreviousBuild, Difference, PercentageDifference " + "\n"
+	var resultsStr string
+	resultsStr = resultsStr + resultFormat
 
-	return diffResultMap
+	for _, diff := range resultDiffs {
+		if diff.IsCompareValid {
+			row := fmt.Sprintf("%s, %.2f, %.2f, %.2f, %.2f",
+				diff.FieldName, diff.CurrentBuildValue, diff.PreviousBuildValue, diff.Difference, diff.PercentageDifference) + "\n"
+			resultsStr = resultsStr + row
+		}
+	}
+
+	return resultsStr
 }
 
 func WriteToEnvVariable(key string, value interface{}) error {
