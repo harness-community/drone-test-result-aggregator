@@ -13,8 +13,11 @@ import (
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/sirupsen/logrus"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -42,6 +45,33 @@ type DbCredentials struct {
 	InfluxDBToken string
 	Organization  string
 	Bucket        string
+}
+
+type BuildResultCompare struct {
+	Tool               string
+	CurrentPipelineId  string
+	CurrentBuildId     string
+	PreviousPipelineId string
+	PreviousBuildId    string
+}
+
+type ResultDiff struct {
+	FieldName            string
+	CurrentBuildValue    float64
+	PreviousBuildValue   float64
+	Difference           float64
+	PercentageDifference float64
+	IsCompareValid       bool
+}
+
+func GetNewBuildResultCompare(tool, currentPipelineId, currentBuildId, previousPipelineId, previousBuildId string) BuildResultCompare {
+	return BuildResultCompare{
+		Tool:               tool,
+		CurrentPipelineId:  currentPipelineId,
+		CurrentBuildId:     currentBuildId,
+		PreviousPipelineId: previousPipelineId,
+		PreviousBuildId:    previousBuildId,
+	}
 }
 
 func GetXmlReportData[T any](reportsRootDir string, patterns []string) ([]T, error) {
@@ -113,7 +143,7 @@ func Aggregate[T any](reportsDir, includes string,
 	dbUrl, dbToken, dbOrg, dbBucket, measurementName, groupName string,
 	calculateAggregate func(testNgAggregatorList []T) T,
 	getDataMaps func(pipelineId, buildNumber string,
-		aggregateData T) (map[string]string, map[string]interface{})) error {
+	aggregateData T) (map[string]string, map[string]interface{})) error {
 
 	reportsRootDir := reportsDir
 	patterns := strings.Split(includes, ",")
@@ -143,7 +173,6 @@ func PersistToInfluxDb(dbUrl, dbToken, dbOrganisation, dbBucket, measurementName
 	tagsMap map[string]string, fieldsMap map[string]interface{}) error {
 
 	tagsMap["group"] = groupName
-
 	client := influxdb2.NewClient(dbUrl, dbToken)
 	defer client.Close()
 	writeAPI := client.WriteAPIBlocking(dbOrganisation, dbBucket)
@@ -187,4 +216,203 @@ func GetPipelineInfo() (string, string, error) {
 	}
 
 	return pipelineId, buildNumber, nil
+}
+
+func GetPreviousBuildId(measurementName, influxURL, token, org, bucket, currentPipelineId, groupId, currentBuildId string) (prevBuildId int, err error) {
+	client := influxdb2.NewClient(influxURL, token)
+	defer client.Close()
+
+	query := fmt.Sprintf(`
+	from(bucket: "%s")
+	  |> range(start: -1y)
+	  |> filter(fn: (r) => r._measurement == "%s")
+	  |> filter(fn: (r) => r.pipelineId == "%s")
+	  |> filter(fn: (r) => r.group == "%s")
+	  |> keep(columns: ["buildId"])
+	  |> distinct(column: "buildId")
+	  |> sort(columns: ["buildId"], desc: true)
+	`, bucket, measurementName, currentPipelineId, groupId)
+
+	queryAPI := client.QueryAPI(org)
+	result, err := queryAPI.Query(context.Background(), query)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query InfluxDB: %w", err)
+	}
+
+	var buildIds []int
+	for result.Next() {
+		buildIdStr := result.Record().ValueByKey("buildId")
+		if buildIdStr == nil {
+			continue
+		}
+		buildId, convErr := strconv.Atoi(buildIdStr.(string))
+		if convErr != nil {
+			continue
+		}
+		buildIds = append(buildIds, buildId)
+	}
+
+	if len(buildIds) == 0 {
+		return 0, fmt.Errorf("no build IDs found for measurement=%s, pipelineId=%s, group=%s",
+			measurementName, currentPipelineId, groupId)
+	}
+
+	currentBuild, err := strconv.Atoi(currentBuildId)
+	if err != nil {
+		return 0, fmt.Errorf("invalid currentBuildId: %s", currentBuildId)
+	}
+
+	sort.Sort(sort.Reverse(sort.IntSlice(buildIds)))
+	for _, id := range buildIds {
+		if id < currentBuild {
+			return id, nil
+		}
+	}
+
+	return 0, fmt.Errorf("no previous build ID found for %d", currentBuild)
+}
+
+func CompareResults(tool string, args Args) (map[string]interface{}, error) {
+	var resultsDiffMap map[string]interface{}
+
+	fmt.Println("CompareResults Tool: ", tool)
+	currentPipelineId, currentBuildNumber, err := GetPipelineInfo()
+	if err != nil {
+		fmt.Println("CompareResults Error getting pipeline info: ", err)
+		return resultsDiffMap, err
+	}
+
+	previousBuildId, err := GetPreviousBuildId(tool, args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket, currentPipelineId, args.GroupName, currentBuildNumber)
+	if err != nil {
+		fmt.Println("CompareResults Error getting previous build id: ", err)
+		return resultsDiffMap, err
+	}
+	fmt.Println("Previous Build Id: ", previousBuildId)
+
+	resultsDiffMap, err = GetComparedDifferences("jacoco", args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket, currentPipelineId, args.GroupName, currentBuildNumber, strconv.Itoa(previousBuildId))
+	return resultsDiffMap, nil
+}
+
+func GetComparedDifferences(measurementName, influxURL, token, org, bucket, currentPipelineId, groupId, currentBuildId, previousBuildId string) (map[string]interface{}, error) {
+
+	fmt.Println("GetComparedDifferences: enter")
+
+	client := influxdb2.NewClient(influxURL, token)
+	defer client.Close()
+
+	currentValues, err := fetchBuildFieldValues(client, org, bucket, measurementName, currentPipelineId, groupId, currentBuildId)
+	if err != nil {
+		fmt.Println("GetComparedDifferences Error fetching current build values: ", err)
+		return nil, fmt.Errorf("error fetching current build values: %w", err)
+	}
+
+	previousValues, err := fetchBuildFieldValues(client, org, bucket, measurementName, currentPipelineId, groupId, previousBuildId)
+	if err != nil {
+		fmt.Println("GetComparedDifferences Error fetching previous build values: ", err)
+		return nil, fmt.Errorf("error fetching previous build values: %w", err)
+	}
+
+	return computeDifferences(currentBuildId, previousBuildId, currentPipelineId, groupId,
+		currentValues, previousValues), nil
+}
+
+func fetchBuildFieldValues(client influxdb2.Client, org, bucket, measurementName,
+	pipelineId, groupId, buildId string) (map[string]float64, error) {
+
+	fmt.Println("fetchBuildFieldValues: enter")
+
+	query := fmt.Sprintf(`
+	from(bucket: "%s")
+	  |> range(start: -1y)
+	  |> filter(fn: (r) => r._measurement == "%s")
+	  |> filter(fn: (r) => r.pipelineId == "%s")
+	  |> filter(fn: (r) => r.group == "%s")
+	  |> filter(fn: (r) => r.buildId == "%s")
+	  |> keep(columns: ["_field", "_value"])
+	`, bucket, measurementName, pipelineId, groupId, buildId)
+
+	queryAPI := client.QueryAPI(org)
+	result, err := queryAPI.Query(context.Background(), query)
+	if err != nil {
+		fmt.Println("fetchBuildFieldValues Error querying InfluxDB: ", err)
+		return nil, fmt.Errorf("failed to query InfluxDB: %w", err)
+	}
+
+	fieldValues := make(map[string]float64)
+	for result.Next() {
+		fieldName := result.Record().ValueByKey("_field")
+		value := result.Record().ValueByKey("_value")
+
+		if fieldName == nil || value == nil {
+			continue
+		}
+
+		fieldNameStr := fieldName.(string)
+		valueFloat, convErr := strconv.ParseFloat(fmt.Sprintf("%v", value), 64)
+		if convErr != nil {
+			continue
+		}
+
+		fieldValues[fieldNameStr] = valueFloat
+	}
+
+	return fieldValues, nil
+}
+
+func computeDifferences(currentBuildId, previousBuildId, pipelineId, groupId string,
+	currentValues, previousValues map[string]float64) map[string]interface{} {
+
+	fmt.Println("computeDifferences: enter")
+
+	resultDiffs := []ResultDiff{}
+	allFields := make(map[string]struct{})
+
+	for field := range currentValues {
+		allFields[field] = struct{}{}
+	}
+	for field := range previousValues {
+		allFields[field] = struct{}{}
+	}
+
+	for field := range allFields {
+		currentValue, currentExists := currentValues[field]
+		previousValue, previousExists := previousValues[field]
+
+		isCompareValid := currentExists && previousExists
+		if !currentExists {
+			currentValue = 0
+		}
+		if !previousExists {
+			previousValue = 0
+		}
+
+		diff := currentValue - previousValue
+		percentageDiff := 0.0
+		if previousValue != 0 {
+			percentageDiff = (diff / math.Abs(previousValue)) * 100
+		}
+
+		resultDiffs = append(resultDiffs, ResultDiff{
+			FieldName:            field,
+			CurrentBuildValue:    currentValue,
+			PreviousBuildValue:   previousValue,
+			Difference:           diff,
+			PercentageDifference: percentageDiff,
+			IsCompareValid:       isCompareValid,
+		})
+	}
+
+	for _, diff := range resultDiffs {
+		fmt.Printf("Field: %s, Current: %.2f, Previous: %.2f, Diff: %.2f, %%Diff: %.2f\n",
+			diff.FieldName, diff.CurrentBuildValue, diff.PreviousBuildValue, diff.Difference, diff.PercentageDifference)
+	}
+
+	diffResultMap := map[string]interface{}{}
+	diffResultMap["current_build_id"] = currentBuildId
+	diffResultMap["previous_build_id"] = previousBuildId
+	diffResultMap["pipeline_id"] = pipelineId
+	diffResultMap["group_id"] = groupId
+	diffResultMap["result_differences"] = resultDiffs
+
+	return diffResultMap
 }

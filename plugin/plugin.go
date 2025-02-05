@@ -6,6 +6,9 @@ package plugin
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"github.com/sirupsen/logrus"
 )
 
@@ -30,11 +33,20 @@ type Args struct {
 
 // Exec executes the plugin.
 func Exec(ctx context.Context, args Args) error {
+
 	logrus.Println("tool args.tool ", args.Tool)
+
 	err := StoreResultsToInfluxDb(args)
 	if err != nil {
 		logrus.Println("error: ", err)
 		return err
+	}
+	if args.CompareBuildResults {
+		err = CompareBuildResults(args)
+		if err != nil {
+			logrus.Println("error: ", err)
+			return err
+		}
 	}
 	return nil
 }
@@ -58,5 +70,32 @@ func StoreResultsToInfluxDb(args Args) error {
 			args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket)
 		return aggregator.Aggregate(args.GroupName)
 	}
-	return nil
+	errStr := fmt.Sprintf("Tool type %s not supported to aggregate", args.Tool)
+	return errors.New(errStr)
+}
+
+func CompareBuildResults(args Args) error {
+
+	var retMap map[string]interface{}
+
+	fmt.Println("Tool: ", args.Tool)
+	var err error
+	switch args.Tool {
+	case JacocoTool:
+		fmt.Println(">>>>>>>>>>>>>>>>>>>>>>>>>>>> jacoco ")
+		retMap, err = CompareResults(JacocoTool, args)
+	default:
+		errStr := fmt.Sprintf("Tool type %s not supported to compare builds", args.Tool)
+		return errors.New(errStr)
+	}
+	// convert map to json
+	jsonBytes, err := json.Marshal(retMap)
+	if err != nil {
+		logrus.Println("Error converting map to json: ", err)
+		return err
+	}
+
+	fmt.Println("UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU")
+	fmt.Println(string(jsonBytes))
+	return err
 }
