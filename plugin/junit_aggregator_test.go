@@ -2,9 +2,25 @@ package plugin
 
 import (
 	"fmt"
-	"reflect"
+	"strings"
 	"testing"
 )
+
+const JunitReportXml = `<?xml version="1.0" encoding="UTF-8"?>
+<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report.xsd" version="3.0.2" name="com.example.project.CalculatorTests" time="0.168" tests="6" errors="7" skipped="8" failures="9">
+ <properties>
+   <property name="os.name" value="Linux"/>
+   <property name="user.name" value="hns"/>
+   <property name="path.separator" value=":"/>
+   <property name="sun.io.unicode.encoding" value="UnicodeLittle"/>
+   <property name="java.class.version" value="52.0"/>
+ </properties>
+ <testcase name="addsTwoNumbers" classname="com.example.project.CalculatorTests" time="0.034"/>
+ <testcase name="add(int, int, int)[1]" classname="com.example.project.CalculatorTests" time="0.022"/>
+ <testcase name="add(int, int, int)[2]" classname="com.example.project.CalculatorTests" time="0.001"/>
+ <testcase name="add(int, int, int)[3]" classname="com.example.project.CalculatorTests" time="0.002"/>
+ <testcase name="add(int, int, int)[4]" classname="com.example.project.CalculatorTests" time="0.001"/>
+</testsuite>`
 
 func TestJunitAggregator_Aggregate(t *testing.T) {
 
@@ -39,55 +55,35 @@ func TestJunitAggregator_Aggregate(t *testing.T) {
 
 }
 
-const JunitReportXml = `<?xml version="1.0" encoding="UTF-8"?>
-<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report.xsd" version="3.0.2" name="com.example.project.CalculatorTests" time="0.168" tests="6" errors="7" skipped="8" failures="9">
- <properties>
-   <property name="os.name" value="Linux"/>
-   <property name="user.name" value="hns"/>
-   <property name="path.separator" value=":"/>
-   <property name="sun.io.unicode.encoding" value="UnicodeLittle"/>
-   <property name="java.class.version" value="52.0"/>
- </properties>
- <testcase name="addsTwoNumbers" classname="com.example.project.CalculatorTests" time="0.034"/>
- <testcase name="add(int, int, int)[1]" classname="com.example.project.CalculatorTests" time="0.022"/>
- <testcase name="add(int, int, int)[2]" classname="com.example.project.CalculatorTests" time="0.001"/>
- <testcase name="add(int, int, int)[3]" classname="com.example.project.CalculatorTests" time="0.002"/>
- <testcase name="add(int, int, int)[4]" classname="com.example.project.CalculatorTests" time="0.001"/>
-</testsuite>`
-
-func TestGetJunitDataMaps(t *testing.T) {
-	pipelineId := "test_pipeline"
-	buildNumber := "5"
-
-	aggregateData := JunitAggregatorData{
-		Name:     "JUnit Test Suite",
-		Tests:    100,
-		Skipped:  5,
-		Failures: 2,
-		Errors:   1,
+func TestComputeJunitBuildResultDifferences(t *testing.T) {
+	currentValues := map[string]float64{
+		"errors":   7,
+		"failures": 9,
+		"skipped":  8,
+		"tests":    6,
 	}
 
-	expectedTagsMap := map[string]string{
-		"pipeline_id": pipelineId,
-		"build_id":    buildNumber,
-		"name":        "JUnit Test Suite",
-		"type":        "",
-		"status":      "",
+	previousValues := map[string]float64{
+		"errors":   7,
+		"failures": 9,
+		"skipped":  8,
+		"tests":    6,
 	}
 
-	expectedFieldsMap := map[string]interface{}{
-		"tests":    100,
-		"skipped":  5,
-		"failures": 2,
-		"errors":   1,
+	resultStr := ComputeBuildResultDifferences(currentValues, previousValues)
+
+	expectedCsvRows := []string{
+		"ResultType, CurrentBuild, PreviousBuild, Difference, PercentageDifference",
+		"errors, 7.00, 7.00, 0.00, 0.00",
+		"failures, 9.00, 9.00, 0.00, 0.00",
+		"skipped, 8.00, 8.00, 0.00, 0.00",
+		"tests, 6.00, 6.00, 0.00, 0.00",
 	}
 
-	tagsMap, fieldsMap := GetJunitDataMaps(pipelineId, buildNumber, aggregateData)
-	if !reflect.DeepEqual(tagsMap, expectedTagsMap) {
-		t.Errorf("tagsMap mismatch.\nExpected: %+v\nGot: %+v", expectedTagsMap, tagsMap)
-	}
-
-	if !reflect.DeepEqual(fieldsMap, expectedFieldsMap) {
-		t.Errorf("fieldsMap mismatch.\nExpected: %+v\nGot: %+v", expectedFieldsMap, fieldsMap)
+	for _, expectedRow := range expectedCsvRows {
+		found := strings.Contains(resultStr, expectedRow)
+		if !found {
+			t.Errorf("Expected row not found in result: %q", expectedRow)
+		}
 	}
 }

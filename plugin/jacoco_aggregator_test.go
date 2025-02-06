@@ -2,10 +2,22 @@ package plugin
 
 import (
 	"fmt"
-	"math"
-	"sort"
+	"strings"
 	"testing"
 )
+
+const JacocoReportXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><!DOCTYPE report PUBLIC "-//JACOCO//DTD Report 1.1//EN"
+        "report.dtd">
+<report name="JaCoCo Coverage Report">
+    <sessioninfo id="ubuntu-20dd7d00" start="1728987209281" dump="1728987210434"/>
+    <sessioninfo id="ubuntu-c45dc566" start="1728987219096" dump="1728987220330"/>
+    <counter type="INSTRUCTION" missed="0" covered="620"/>
+    <counter type="BRANCH" missed="1" covered="57"/>
+    <counter type="LINE" missed="0" covered="122"/>
+    <counter type="COMPLEXITY" missed="1" covered="70"/>
+    <counter type="METHOD" missed="0" covered="42"/>
+    <counter type="CLASS" missed="0" covered="5"/>
+</report>`
 
 func TestJacocoAggregator(t *testing.T) {
 	tagsMap, fieldsMap := MockAggregate[Report](JacocoReportXml, CalculateJacocoAggregate, GetJacocoDataMaps)
@@ -51,24 +63,7 @@ func TestJacocoAggregator(t *testing.T) {
 	}
 }
 
-const JacocoReportXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><!DOCTYPE report PUBLIC "-//JACOCO//DTD Report 1.1//EN"
-        "report.dtd">
-<report name="JaCoCo Coverage Report">
-    <sessioninfo id="ubuntu-20dd7d00" start="1728987209281" dump="1728987210434"/>
-    <sessioninfo id="ubuntu-c45dc566" start="1728987219096" dump="1728987220330"/>
-    <counter type="INSTRUCTION" missed="0" covered="620"/>
-    <counter type="BRANCH" missed="1" covered="57"/>
-    <counter type="LINE" missed="0" covered="122"/>
-    <counter type="COMPLEXITY" missed="1" covered="70"/>
-    <counter type="METHOD" missed="0" covered="42"/>
-    <counter type="CLASS" missed="0" covered="5"/>
-</report>`
-
 func TestComputeJacocoBuildResultDifferences(t *testing.T) {
-	currentBuildId := "5"
-	previousBuildId := "4"
-	pipelineId := "test_pipeline"
-	groupId := "test_group"
 
 	currentValues := map[string]float64{
 		"instruction_total_sum":   1240,
@@ -126,33 +121,33 @@ func TestComputeJacocoBuildResultDifferences(t *testing.T) {
 		})
 	}
 
-	result := ComputeBuildResultDifferences(currentBuildId, previousBuildId, pipelineId, groupId, currentValues, previousValues)
-
-	resultDiffs, ok := result["result_differences"].([]ResultDiff)
-	if !ok {
-		t.Fatalf("Expected []ResultDiff, got %T", result["result_differences"])
+	result := ComputeBuildResultDifferences(currentValues, previousValues)
+	expectedCsvRows := []string{
+		"ResultType, CurrentBuild, PreviousBuild, Difference, PercentageDifference",
+		"instruction_missed_sum, 0.00, 0.00, 0.00, 0.00",
+		"method_missed_sum, 0.00, 0.00, 0.00, 0.00",
+		"class_covered_sum, 10.00, 10.00, 0.00, 0.00",
+		"line_total_sum, 244.00, 244.00, 0.00, 0.00",
+		"complexity_covered_sum, 140.00, 140.00, 0.00, 0.00",
+		"instruction_total_sum, 1240.00, 1240.00, 0.00, 0.00",
+		"class_missed_sum, 0.00, 0.00, 0.00, 0.00",
+		"instruction_covered_sum, 1240.00, 1240.00, 0.00, 0.00",
+		"line_missed_sum, 0.00, 0.00, 0.00, 0.00",
+		"branch_covered_sum, 114.00, 114.00, 0.00, 0.00",
+		"branch_missed_sum, 2.00, 2.00, 0.00, 0.00",
+		"method_total_sum, 84.00, 84.00, 0.00, 0.00",
+		"line_covered_sum, 244.00, 244.00, 0.00, 0.00",
+		"method_covered_sum, 84.00, 84.00, 0.00, 0.00",
+		"branch_total_sum, 116.00, 116.00, 0.00, 0.00",
+		"complexity_total_sum, 142.00, 142.00, 0.00, 0.00",
+		"complexity_missed_sum, 2.00, 2.00, 0.00, 0.00",
+		"class_total_sum, 10.00, 10.00, 0.00, 0.00",
 	}
 
-	sort.Slice(expectedResultDiffs, func(i, j int) bool {
-		return expectedResultDiffs[i].FieldName < expectedResultDiffs[j].FieldName
-	})
-	sort.Slice(resultDiffs, func(i, j int) bool {
-		return resultDiffs[i].FieldName < resultDiffs[j].FieldName
-	})
-
-	if len(resultDiffs) != len(expectedResultDiffs) {
-		t.Fatalf("Expected %d results, got %d", len(expectedResultDiffs), len(resultDiffs))
-	}
-
-	for i, expected := range expectedResultDiffs {
-		actual := resultDiffs[i]
-		if actual.FieldName != expected.FieldName ||
-			actual.CurrentBuildValue != expected.CurrentBuildValue ||
-			actual.PreviousBuildValue != expected.PreviousBuildValue ||
-			actual.Difference != expected.Difference ||
-			math.Abs(actual.PercentageDifference-expected.PercentageDifference) > 0.0001 || // Allow minor floating-point precision errors
-			actual.IsCompareValid != expected.IsCompareValid {
-			t.Errorf("Mismatch at index %d: got %+v, expected %+v", i, actual, expected)
+	for _, expectedRow := range expectedCsvRows {
+		found := strings.Contains(result, expectedRow)
+		if !found {
+			t.Errorf("Expected row not found in result: %q", expectedRow)
 		}
 	}
 }

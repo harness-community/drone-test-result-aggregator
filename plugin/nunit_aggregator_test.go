@@ -2,43 +2,9 @@ package plugin
 
 import (
 	"fmt"
-	"math"
-	"sort"
+	"strings"
 	"testing"
 )
-
-func TestNunitAggregator(t *testing.T) {
-	tagsMap, fieldsMap := MockAggregate[TestRun](NunitTestXml,
-		CalculateNugetAggregate, GetNunitDataMaps)
-
-	expectedTagsMap := map[string]string{
-		"buildId":    mockBuildNumber,
-		"pipelineId": mockPipelineId,
-	}
-
-	expectedFieldsMap := map[string]interface{}{
-		"outcome":  "Completed",
-		"total":    3,
-		"executed": 2,
-		"passed":   2,
-		"failed":   0,
-	}
-
-	for k := range expectedTagsMap {
-		if tagsMap[k] != expectedTagsMap[k] {
-			t.Errorf("===> Mismatch in TagsMap for key %q: got %v, expected %v",
-				k, tagsMap[k], expectedTagsMap[k])
-		}
-	}
-
-	for k := range expectedFieldsMap {
-		gotVal := fmt.Sprintf("%v", fieldsMap[k])
-		expectedVal := fmt.Sprintf("%v", expectedFieldsMap[k])
-		if gotVal != expectedVal {
-			t.Errorf("Mismatch in FieldsMap for key %q: got %v, expected %v", k, gotVal, expectedVal)
-		}
-	}
-}
 
 const NunitTestXml = `<?xml version="1.0" encoding="utf-8"?>
 <TestRun id="3e5652b8-f41b-4e07-b3d2-5f28f4f6cc08" name="@ubuntu 2025-01-22 23:28:25" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
@@ -105,12 +71,40 @@ Test 'IgnoredTest' was skipped in the test run.
   </ResultSummary>
 </TestRun>`
 
-func TestComputeNunitBuildResultDifferences(t *testing.T) {
-	currentBuildId := "5"
-	previousBuildId := "4"
-	pipelineId := "test_pipeline"
-	groupId := "test_group"
+func TestNunitAggregator(t *testing.T) {
+	tagsMap, fieldsMap := MockAggregate[TestRun](NunitTestXml,
+		CalculateNugetAggregate, GetNunitDataMaps)
 
+	expectedTagsMap := map[string]string{
+		"buildId":    mockBuildNumber,
+		"pipelineId": mockPipelineId,
+	}
+
+	expectedFieldsMap := map[string]interface{}{
+		"outcome":  "Completed",
+		"total":    3,
+		"executed": 2,
+		"passed":   2,
+		"failed":   0,
+	}
+
+	for k := range expectedTagsMap {
+		if tagsMap[k] != expectedTagsMap[k] {
+			t.Errorf("===> Mismatch in TagsMap for key %q: got %v, expected %v",
+				k, tagsMap[k], expectedTagsMap[k])
+		}
+	}
+
+	for k := range expectedFieldsMap {
+		gotVal := fmt.Sprintf("%v", fieldsMap[k])
+		expectedVal := fmt.Sprintf("%v", expectedFieldsMap[k])
+		if gotVal != expectedVal {
+			t.Errorf("Mismatch in FieldsMap for key %q: got %v, expected %v", k, gotVal, expectedVal)
+		}
+	}
+}
+
+func TestComputeNunitBuildResultDifferences(t *testing.T) {
 	currentValues := map[string]float64{
 		"total":               100,
 		"executed":            95,
@@ -149,7 +143,6 @@ func TestComputeNunitBuildResultDifferences(t *testing.T) {
 		"pending":             3,
 	}
 
-	// Expected result differences
 	expectedResultDiffs := []ResultDiff{}
 	for field, currValue := range currentValues {
 		prevValue := previousValues[field]
@@ -159,38 +152,37 @@ func TestComputeNunitBuildResultDifferences(t *testing.T) {
 			CurrentBuildValue:    currValue,
 			PreviousBuildValue:   prevValue,
 			Difference:           currValue - prevValue,
-			PercentageDifference: 0, // Since values are identical, percentage difference is 0
+			PercentageDifference: 0,
 			IsCompareValid:       true,
 		})
 	}
 
-	result := ComputeBuildResultDifferences(currentBuildId, previousBuildId, pipelineId, groupId, currentValues, previousValues)
+	result := ComputeBuildResultDifferences(currentValues, previousValues)
 
-	resultDiffs, ok := result["result_differences"].([]ResultDiff)
-	if !ok {
-		t.Fatalf("Expected []ResultDiff, got %T", result["result_differences"])
+	expectedCsvRows := []string{
+		"ResultType, CurrentBuild, PreviousBuild, Difference, PercentageDifference",
+		"total, 100.00, 100.00, 0.00, 0.00",
+		"disconnected, 0.00, 0.00, 0.00, 0.00",
+		"notExecuted, 1.00, 1.00, 0.00, 0.00",
+		"warning, 3.00, 3.00, 0.00, 0.00",
+		"aborted, 0.00, 0.00, 0.00, 0.00",
+		"timeout, 0.00, 0.00, 0.00, 0.00",
+		"notRunnable, 1.00, 1.00, 0.00, 0.00",
+		"pending, 3.00, 3.00, 0.00, 0.00",
+		"passedButRunAborted, 0.00, 0.00, 0.00, 0.00",
+		"inProgress, 2.00, 2.00, 0.00, 0.00",
+		"completed, 95.00, 95.00, 0.00, 0.00",
+		"error, 1.00, 1.00, 0.00, 0.00",
+		"failed, 5.00, 5.00, 0.00, 0.00",
+		"executed, 95.00, 95.00, 0.00, 0.00",
+		"inconclusive, 2.00, 2.00, 0.00, 0.00",
+		"passed, 90.00, 90.00, 0.00, 0.00",
 	}
 
-	sort.Slice(expectedResultDiffs, func(i, j int) bool {
-		return expectedResultDiffs[i].FieldName < expectedResultDiffs[j].FieldName
-	})
-	sort.Slice(resultDiffs, func(i, j int) bool {
-		return resultDiffs[i].FieldName < resultDiffs[j].FieldName
-	})
-
-	if len(resultDiffs) != len(expectedResultDiffs) {
-		t.Fatalf("Expected %d results, got %d", len(expectedResultDiffs), len(resultDiffs))
-	}
-
-	for i, expected := range expectedResultDiffs {
-		actual := resultDiffs[i]
-		if actual.FieldName != expected.FieldName ||
-			actual.CurrentBuildValue != expected.CurrentBuildValue ||
-			actual.PreviousBuildValue != expected.PreviousBuildValue ||
-			actual.Difference != expected.Difference ||
-			math.Abs(actual.PercentageDifference-expected.PercentageDifference) > 0.0001 || // Allow minor floating-point precision errors
-			actual.IsCompareValid != expected.IsCompareValid {
-			t.Errorf("Mismatch at index %d: got %+v, expected %+v", i, actual, expected)
+	for _, expectedRow := range expectedCsvRows {
+		found := strings.Contains(result, expectedRow)
+		if !found {
+			t.Errorf("Expected row not found in result: %q", expectedRow)
 		}
 	}
 }
