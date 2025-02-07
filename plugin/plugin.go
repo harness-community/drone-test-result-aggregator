@@ -97,9 +97,6 @@ func CompareBuildResults(args Args) error {
 		return err
 	}
 
-	fmt.Println("resultStr ", resultStr)
-
-	resultStr = ConvertToBase64(resultStr)
 	err = WriteToEnvVariable("BUILD_RESULTS_DIFF", resultStr)
 	return err
 }

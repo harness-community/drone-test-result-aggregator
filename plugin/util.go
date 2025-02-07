@@ -19,7 +19,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"text/tabwriter"
 	"time"
 )
 
@@ -57,12 +56,12 @@ type BuildResultCompare struct {
 }
 
 type ResultDiff struct {
-	FieldName            string
-	CurrentBuildValue    float64
-	PreviousBuildValue   float64
-	Difference           float64
-	PercentageDifference float64
-	IsCompareValid       bool
+	FieldName            string  `json:"type"`
+	CurrentBuildValue    float64 `json:"current_build"`
+	PreviousBuildValue   float64 `json:"previous_build"`
+	Difference           float64 `json:"difference"`
+	PercentageDifference float64 `json:"percentage_difference"`
+	IsCompareValid       bool    `json:"-"`
 }
 
 func GetNewBuildResultCompare(tool, currentPipelineId, currentBuildId, previousPipelineId, previousBuildId string) BuildResultCompare {
@@ -170,6 +169,7 @@ func Aggregate[T any](reportsDir, includes string,
 		logrus.Println("Error showing build stats: ", err.Error())
 		return err
 	}
+	_ = ExportBuildStats(fieldsMap)
 	err = PersistToInfluxDb(dbUrl, dbToken, dbOrg, dbBucket, measurementName, groupName, tagsMap, fieldsMap)
 
 	return err
@@ -346,6 +346,15 @@ func GetStoredBuildResults(client influxdb2.Client, org, bucket, measurementName
 	return fieldValues, nil
 }
 
+func ExportBuildStats(fieldsMap map[string]interface{}) string {
+	resultStr, err := ToJsonStringFromStringMap(fieldsMap)
+	if err != nil {
+		fmt.Println("Error converting fieldsMap to json string: ", err)
+	}
+	err = WriteToEnvVariable("BUILD_RESULTS", resultStr)
+	return resultStr
+}
+
 func ComputeBuildResultDifferences(currentValues, previousValues map[string]float64) string {
 	resultDiffs := []ResultDiff{}
 	allFields := make(map[string]struct{})
@@ -357,6 +366,7 @@ func ComputeBuildResultDifferences(currentValues, previousValues map[string]floa
 		allFields[field] = struct{}{}
 	}
 
+	retStrMap := map[string]interface{}{}
 	for field := range allFields {
 		currentValue, currentExists := currentValues[field]
 		previousValue, previousExists := previousValues[field]
@@ -375,6 +385,8 @@ func ComputeBuildResultDifferences(currentValues, previousValues map[string]floa
 			percentageDiff = (diff / math.Abs(previousValue)) * 100
 		}
 
+		retStrMap[field] = fmt.Sprintf("\"Current = %.2f, Previous = %.2f, Difference = %.2f, Percentage Difference = %.2f\"",
+			currentValue, previousValue, diff, percentageDiff)
 		resultDiffs = append(resultDiffs, ResultDiff{
 			FieldName:            field,
 			CurrentBuildValue:    currentValue,
@@ -385,26 +397,16 @@ func ComputeBuildResultDifferences(currentValues, previousValues map[string]floa
 		})
 	}
 
-	resultFormat := "ResultType, CurrentBuild, PreviousBuild, Difference, PercentageDifference " + "\n"
-	var resultsStr string
-	resultsStr = resultsStr + resultFormat
-
-	for _, diff := range resultDiffs {
-		if diff.IsCompareValid {
-			row := fmt.Sprintf("%s, %.2f, %.2f, %.2f, %.2f",
-				diff.FieldName, diff.CurrentBuildValue, diff.PreviousBuildValue, diff.Difference, diff.PercentageDifference) + "\n"
-			resultsStr = resultsStr + row
-		}
-	}
 	fmt.Println("")
 	fmt.Println("Comparison results with previous build:")
 	ShowDiffAsTable(currentValues, previousValues)
 	fmt.Println("")
-	return resultsStr
+
+	retJsonStr, _ := ToJsonStringFromStringMap(retStrMap)
+	return retJsonStr
 }
 
 func ShowDiffAsTable(currentValues, previousValues map[string]float64) {
-	// Collect all unique fields from both maps
 	allFields := make(map[string]struct{})
 	for key := range currentValues {
 		allFields[key] = struct{}{}
@@ -413,19 +415,16 @@ func ShowDiffAsTable(currentValues, previousValues map[string]float64) {
 		allFields[key] = struct{}{}
 	}
 
-	// Sort fields alphabetically for consistent output
 	var sortedFields []string
 	for field := range allFields {
 		sortedFields = append(sortedFields, field)
 	}
 	sort.Strings(sortedFields)
 
-	// Print table header with borders
 	fmt.Println("+------------------+---------------+---------------+------------+------------------------+")
 	fmt.Println("|   Result Type    | Current Build | Previous Build | Difference | Percentage Difference |")
 	fmt.Println("+------------------+---------------+---------------+------------+------------------------+")
 
-	// Print each row
 	for _, field := range sortedFields {
 		currentVal := currentValues[field]
 		previousVal := previousValues[field]
@@ -436,37 +435,11 @@ func ShowDiffAsTable(currentValues, previousValues map[string]float64) {
 			percentageDiff = (diff / math.Abs(previousVal)) * 100
 		}
 
-		// Print formatted row
 		fmt.Printf("| %-16s | %-13d | %-13d | %-10d | %-22.2f%% |\n",
 			field, int(currentVal), int(previousVal), int(diff), percentageDiff)
 	}
 
-	// Print table footer
 	fmt.Println("+------------------+---------------+---------------+------------+------------------------+")
-}
-
-func ShowDiffAsTable2(currentValues, previousValues map[string]float64) {
-	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', tabwriter.AlignRight)
-	fmt.Fprintln(writer, "Result Type\tCurrent Build\tPrevious Build\tDifference\tPercentage Difference")
-	allFields := make(map[string]struct{})
-	for key := range currentValues {
-		allFields[key] = struct{}{}
-	}
-	for key := range previousValues {
-		allFields[key] = struct{}{}
-	}
-	for field := range allFields {
-		currentVal := currentValues[field]
-		previousVal := previousValues[field]
-
-		diff := currentVal - previousVal
-		percentageDiff := 0.0
-		if previousVal != 0 {
-			percentageDiff = (diff / math.Abs(previousVal)) * 100
-		}
-		fmt.Fprintf(writer, "%s\t%d\t%d\t%d\t%.2f%%\n", field, int(currentVal), int(previousVal), int(diff), percentageDiff)
-	}
-	writer.Flush()
 }
 
 func WriteToEnvVariable(key string, value interface{}) error {
@@ -500,5 +473,13 @@ func ToJsonStringFromStruct[T any](v T) (string, error) {
 		return string(jsonBytes), nil
 	}
 
+	return "", err
+}
+
+func ToJsonStringFromStringMap(m map[string]interface{}) (string, error) {
+	outBytes, err := json.Marshal(m)
+	if err == nil {
+		return string(outBytes), nil
+	}
 	return "", err
 }
