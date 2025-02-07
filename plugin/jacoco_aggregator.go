@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"encoding/xml"
+	"fmt"
 	"github.com/sirupsen/logrus"
 )
 
@@ -146,5 +147,40 @@ func addToSum(totalSum *float64, coveredSum *float64, missedSum *float64,
 }
 
 func ShowJacocoStats(tags map[string]string, fields map[string]interface{}) error {
+	fmt.Println("")
+	fmt.Println("====================================================================")
+	fmt.Println("Jacoco Code Coverage Summary")
+	fmt.Printf("Pipeline ID: %s, Build ID: %s \n", tags["pipelineId"], tags["buildId"])
+	fmt.Println("====================================================================")
+	fmt.Println("Instruction Coverage:")
+	fmt.Printf("   Total:    %.2f\n", fields["instruction_total_sum"])
+	fmt.Printf("   ✅ Covered:  %.2f\n", fields["instruction_covered_sum"])
+	fmt.Printf("   ❌ Missed:   %.2f\n", fields["instruction_missed_sum"])
+	fmt.Println("--------------------------------------------------------------------")
+	fmt.Println(" Branch Coverage:")
+	fmt.Printf("   Total:    %.2f\n", fields["branch_total_sum"])
+	fmt.Printf("   ✅ Covered:  %.2f\n", fields["branch_covered_sum"])
+	fmt.Printf("   ❌ Missed:   %.2f\n", fields["branch_missed_sum"])
+	fmt.Println("--------------------------------------------------------------------")
+	fmt.Println(" Line Coverage:")
+	fmt.Printf("    Total:    %.2f\n", fields["line_total_sum"])
+	fmt.Printf("   ✅ Covered:  %.2f\n", fields["line_covered_sum"])
+	fmt.Printf("   ❌ Missed:   %.2f\n", fields["line_missed_sum"])
+	fmt.Println("--------------------------------------------------------------------")
+	fmt.Println(" Complexity Coverage:")
+	fmt.Printf("    Total:    %.2f\n", fields["complexity_total_sum"])
+	fmt.Printf("   ✅ Covered:  %.2f\n", fields["complexity_covered_sum"])
+	fmt.Printf("   ❌ Missed:   %.2f\n", fields["complexity_missed_sum"])
+	fmt.Println("--------------------------------------------------------------------")
+	fmt.Println(" Method Coverage:")
+	fmt.Printf("    Total:    %.2f\n", fields["method_total_sum"])
+	fmt.Printf("   ✅ Covered:  %.2f\n", fields["method_covered_sum"])
+	fmt.Printf("   ❌ Missed:   %.2f\n", fields["method_missed_sum"])
+	fmt.Println("--------------------------------------------------------------------")
+	fmt.Println("️ Class Coverage:")
+	fmt.Printf("    Total:    %.2f\n", fields["class_total_sum"])
+	fmt.Printf("   ✅ Covered:  %.2f\n", fields["class_covered_sum"])
+	fmt.Printf("   ❌ Missed:   %.2f\n", fields["class_missed_sum"])
+	fmt.Println("====================================================================")
 	return nil
 }
