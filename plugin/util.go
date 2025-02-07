@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"text/tabwriter"
 	"time"
 )
 
@@ -395,8 +396,77 @@ func ComputeBuildResultDifferences(currentValues, previousValues map[string]floa
 			resultsStr = resultsStr + row
 		}
 	}
-
+	fmt.Println("")
+	fmt.Println("Comparison results with previous build:")
+	ShowDiffAsTable(currentValues, previousValues)
+	fmt.Println("")
 	return resultsStr
+}
+
+func ShowDiffAsTable(currentValues, previousValues map[string]float64) {
+	// Collect all unique fields from both maps
+	allFields := make(map[string]struct{})
+	for key := range currentValues {
+		allFields[key] = struct{}{}
+	}
+	for key := range previousValues {
+		allFields[key] = struct{}{}
+	}
+
+	// Sort fields alphabetically for consistent output
+	var sortedFields []string
+	for field := range allFields {
+		sortedFields = append(sortedFields, field)
+	}
+	sort.Strings(sortedFields)
+
+	// Print table header with borders
+	fmt.Println("+------------------+---------------+---------------+------------+------------------------+")
+	fmt.Println("|   Result Type    | Current Build | Previous Build | Difference | Percentage Difference |")
+	fmt.Println("+------------------+---------------+---------------+------------+------------------------+")
+
+	// Print each row
+	for _, field := range sortedFields {
+		currentVal := currentValues[field]
+		previousVal := previousValues[field]
+
+		diff := currentVal - previousVal
+		percentageDiff := 0.0
+		if previousVal != 0 {
+			percentageDiff = (diff / math.Abs(previousVal)) * 100
+		}
+
+		// Print formatted row
+		fmt.Printf("| %-16s | %-13d | %-13d | %-10d | %-22.2f%% |\n",
+			field, int(currentVal), int(previousVal), int(diff), percentageDiff)
+	}
+
+	// Print table footer
+	fmt.Println("+------------------+---------------+---------------+------------+------------------------+")
+}
+
+func ShowDiffAsTable2(currentValues, previousValues map[string]float64) {
+	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', tabwriter.AlignRight)
+	fmt.Fprintln(writer, "Result Type\tCurrent Build\tPrevious Build\tDifference\tPercentage Difference")
+	allFields := make(map[string]struct{})
+	for key := range currentValues {
+		allFields[key] = struct{}{}
+	}
+	for key := range previousValues {
+		allFields[key] = struct{}{}
+	}
+	for field := range allFields {
+		currentVal := currentValues[field]
+		previousVal := previousValues[field]
+
+		diff := currentVal - previousVal
+		percentageDiff := 0.0
+		if previousVal != 0 {
+			percentageDiff = (diff / math.Abs(previousVal)) * 100
+		}
+		fmt.Fprintf(writer, "%s\t%d\t%d\t%d\t%.2f%%\n", field, int(currentVal), int(previousVal), int(diff), percentageDiff)
+	}
+	writer.Flush()
 }
 
 func WriteToEnvVariable(key string, value interface{}) error {
