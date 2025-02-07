@@ -1,7 +1,7 @@
 package plugin
 
 import (
-	"encoding/xml"
+	"fmt"
 	"github.com/sirupsen/logrus"
 )
 
@@ -12,33 +12,12 @@ type NunitAggregator struct {
 	DbCredentials
 }
 
-type TestRun struct {
-	XMLName       xml.Name      `xml:"TestRun"`
-	ResultSummary ResultSummary `xml:"ResultSummary"`
-}
-
-type ResultSummary struct {
-	Outcome  string   `xml:"outcome,attr"`
-	Counters Counters `xml:"Counters"`
-}
-
-type Counters struct {
-	Total               int `xml:"total,attr"`
-	Executed            int `xml:"executed,attr"`
-	Passed              int `xml:"passed,attr"`
-	Failed              int `xml:"failed,attr"`
-	Error               int `xml:"error,attr"`
-	Timeout             int `xml:"timeout,attr"`
-	Aborted             int `xml:"aborted,attr"`
-	Inconclusive        int `xml:"inconclusive,attr"`
-	PassedButRunAborted int `xml:"passedButRunAborted,attr"`
-	NotRunnable         int `xml:"notRunnable,attr"`
-	NotExecuted         int `xml:"notExecuted,attr"`
-	Disconnected        int `xml:"disconnected,attr"`
-	Warning             int `xml:"warning,attr"`
-	Completed           int `xml:"completed,attr"`
-	InProgress          int `xml:"inProgress,attr"`
-	Pending             int `xml:"pending,attr"`
+type TestRunSummary struct {
+	TotalCases   int    `xml:"total,attr"`
+	TotalPassed  int    `xml:"passed,attr"`
+	TotalFailed  int    `xml:"failed,attr"`
+	TotalSkipped int    `xml:"skipped,attr"`
+	Result       string `xml:"result,attr"`
 }
 
 func GetNewNunitAggregator(
@@ -57,66 +36,54 @@ func GetNewNunitAggregator(
 }
 
 func (n *NunitAggregator) Aggregate(groupName string) error {
+	logrus.Println("NUnit Aggregator Aggregate (Using <test-run> Summary)")
 
-	logrus.Println("Nunit Aggregator Aggregate")
-
-	err := Aggregate[TestRun](n.ReportsDir, n.Includes,
+	err := Aggregate[TestRunSummary](n.ReportsDir, n.Includes,
 		n.DbCredentials.InfluxDBURL, n.DbCredentials.InfluxDBToken,
 		n.DbCredentials.Organization, n.DbCredentials.Bucket, NunitTool, groupName,
-		CalculateNugetAggregate, GetNunitDataMaps)
+		CalculateNunitAggregate, GetNunitDataMaps)
 
 	return err
 }
 
-func CalculateNugetAggregate(nunitAggregatorList []TestRun) TestRun {
-	aggregatorData := TestRun{}
+func CalculateNunitAggregate(reports []TestRunSummary) TestRunSummary {
+	fmt.Println("CalculateNunitAggregate - Using only <test-run> summary")
 
-	for _, nunitAggregatorData := range nunitAggregatorList {
-		aggregatorData.ResultSummary.Outcome = nunitAggregatorData.ResultSummary.Outcome
-		aggregatorData.ResultSummary.Counters.Total += nunitAggregatorData.ResultSummary.Counters.Total
-		aggregatorData.ResultSummary.Counters.Executed += nunitAggregatorData.ResultSummary.Counters.Executed
-		aggregatorData.ResultSummary.Counters.Passed += nunitAggregatorData.ResultSummary.Counters.Passed
-		aggregatorData.ResultSummary.Counters.Failed += nunitAggregatorData.ResultSummary.Counters.Failed
-		aggregatorData.ResultSummary.Counters.Error += nunitAggregatorData.ResultSummary.Counters.Error
-		aggregatorData.ResultSummary.Counters.Timeout += nunitAggregatorData.ResultSummary.Counters.Timeout
-		aggregatorData.ResultSummary.Counters.Aborted += nunitAggregatorData.ResultSummary.Counters.Aborted
-		aggregatorData.ResultSummary.Counters.Inconclusive += nunitAggregatorData.ResultSummary.Counters.Inconclusive
-		aggregatorData.ResultSummary.Counters.PassedButRunAborted += nunitAggregatorData.ResultSummary.Counters.PassedButRunAborted
-		aggregatorData.ResultSummary.Counters.NotRunnable += nunitAggregatorData.ResultSummary.Counters.NotRunnable
-		aggregatorData.ResultSummary.Counters.NotExecuted += nunitAggregatorData.ResultSummary.Counters.NotExecuted
-		aggregatorData.ResultSummary.Counters.Disconnected += nunitAggregatorData.ResultSummary.Counters.Disconnected
-		aggregatorData.ResultSummary.Counters.Warning += nunitAggregatorData.ResultSummary.Counters.Warning
-		aggregatorData.ResultSummary.Counters.Completed += nunitAggregatorData.ResultSummary.Counters.Completed
-		aggregatorData.ResultSummary.Counters.InProgress += nunitAggregatorData.ResultSummary.Counters.InProgress
-		aggregatorData.ResultSummary.Counters.Pending += nunitAggregatorData.ResultSummary.Counters.Pending
+	totalCases, totalPassed, totalFailed, totalSkipped := 0, 0, 0, 0
+
+	for _, report := range reports {
+		totalCases += report.TotalCases
+		totalPassed += report.TotalPassed
+		totalFailed += report.TotalFailed
+		totalSkipped += report.TotalSkipped
 	}
-	return aggregatorData
+
+	fmt.Printf("Summary -> Total: %d, Passed: %d, Failed: %d, Skipped: %d\n",
+		totalCases, totalPassed, totalFailed, totalSkipped)
+
+	return TestRunSummary{
+		TotalCases:   totalCases,
+		TotalPassed:  totalPassed,
+		TotalFailed:  totalFailed,
+		TotalSkipped: totalSkipped,
+		Result:       "Aggregated",
+	}
 }
 
-func GetNunitDataMaps(pipelineId, buildNumber string,
-	aggregateData TestRun) (map[string]string, map[string]interface{}) {
-	tagsMap := map[string]string{
-		"pipelineId": pipelineId,
-		"buildId":    buildNumber,
+func GetNunitDataMaps(pipelineId, buildNumber string, aggregateData TestRunSummary) (map[string]string, map[string]interface{}) {
+	fmt.Println("GetNunitDataMaps - Using only <test-run> summary")
+
+	tags := map[string]string{
+		"pipeline_id":  pipelineId,
+		"build_number": buildNumber,
 	}
-	fieldsMap := map[string]interface{}{
-		"outcome":             aggregateData.ResultSummary.Outcome,
-		"total":               aggregateData.ResultSummary.Counters.Total,
-		"executed":            aggregateData.ResultSummary.Counters.Executed,
-		"passed":              aggregateData.ResultSummary.Counters.Passed,
-		"failed":              aggregateData.ResultSummary.Counters.Failed,
-		"error":               aggregateData.ResultSummary.Counters.Error,
-		"timeout":             aggregateData.ResultSummary.Counters.Timeout,
-		"aborted":             aggregateData.ResultSummary.Counters.Aborted,
-		"inconclusive":        aggregateData.ResultSummary.Counters.Inconclusive,
-		"passedButRunAborted": aggregateData.ResultSummary.Counters.PassedButRunAborted,
-		"notRunnable":         aggregateData.ResultSummary.Counters.NotRunnable,
-		"notExecuted":         aggregateData.ResultSummary.Counters.NotExecuted,
-		"disconnected":        aggregateData.ResultSummary.Counters.Disconnected,
-		"warning":             aggregateData.ResultSummary.Counters.Warning,
-		"completed":           aggregateData.ResultSummary.Counters.Completed,
-		"inProgress":          aggregateData.ResultSummary.Counters.InProgress,
-		"pending":             aggregateData.ResultSummary.Counters.Pending,
+
+	fields := map[string]interface{}{
+		"total_cases":   aggregateData.TotalCases,
+		"total_passed":  aggregateData.TotalPassed,
+		"total_failed":  aggregateData.TotalFailed,
+		"total_skipped": aggregateData.TotalSkipped,
 	}
-	return tagsMap, fieldsMap
+
+	return tags, fields
 }
