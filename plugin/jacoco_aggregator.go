@@ -72,7 +72,7 @@ func (j *JacocoAggregator) Aggregate(groupName string) error {
 	err := Aggregate[Report](j.ReportsDir, j.Includes,
 		j.DbCredentials.InfluxDBURL, j.DbCredentials.InfluxDBToken,
 		j.DbCredentials.Organization, j.DbCredentials.Bucket, JacocoTool, groupName,
-		CalculateJacocoAggregate, GetJacocoDataMaps)
+		CalculateJacocoAggregate, GetJacocoDataMaps, ShowJacocoStats)
 	return err
 }
 
@@ -143,4 +143,8 @@ func addToSum(totalSum *float64, coveredSum *float64, missedSum *float64,
 	*totalSum += covered + missed
 	*coveredSum += covered
 	*missedSum += missed
+}
+
+func ShowJacocoStats(tags map[string]string, fields map[string]interface{}) error {
+	return nil
 }

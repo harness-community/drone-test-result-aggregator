@@ -47,7 +47,7 @@ func (j *JunitAggregator) Aggregate(groupName string) error {
 	err := Aggregate[JunitAggregatorData](j.ReportsDir, j.Includes,
 		j.DbCredentials.InfluxDBURL, j.DbCredentials.InfluxDBToken,
 		j.DbCredentials.Organization, j.DbCredentials.Bucket, JunitTool, groupName,
-		CalculateJunitAggregate, GetJunitDataMaps)
+		CalculateJunitAggregate, GetJunitDataMaps, ShowJunitStats)
 	return err
 }
 
@@ -82,4 +82,8 @@ func GetJunitDataMaps(pipelineId, buildNumber string,
 	}
 
 	return tagsMap, fieldsMap
+}
+
+func ShowJunitStats(tagsMap map[string]string, fieldsMap map[string]interface{}) error {
+	return nil
 }

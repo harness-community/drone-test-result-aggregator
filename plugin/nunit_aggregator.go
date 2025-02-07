@@ -41,7 +41,7 @@ func (n *NunitAggregator) Aggregate(groupName string) error {
 	err := Aggregate[TestRunSummary](n.ReportsDir, n.Includes,
 		n.DbCredentials.InfluxDBURL, n.DbCredentials.InfluxDBToken,
 		n.DbCredentials.Organization, n.DbCredentials.Bucket, NunitTool, groupName,
-		CalculateNunitAggregate, GetNunitDataMaps)
+		CalculateNunitAggregate, GetNunitDataMaps, ShowNunitStats)
 
 	return err
 }
@@ -74,8 +74,8 @@ func GetNunitDataMaps(pipelineId, buildNumber string, aggregateData TestRunSumma
 	fmt.Println("GetNunitDataMaps - Using only <test-run> summary")
 
 	tags := map[string]string{
-		"pipeline_id":  pipelineId,
-		"build_number": buildNumber,
+		"pipelineId": pipelineId,
+		"buildId":    buildNumber,
 	}
 
 	fields := map[string]interface{}{
@@ -86,4 +86,17 @@ func GetNunitDataMaps(pipelineId, buildNumber string, aggregateData TestRunSumma
 	}
 
 	return tags, fields
+}
+
+func ShowNunitStats(tags map[string]string, fields map[string]interface{}) error {
+	fmt.Println("")
+	fmt.Println("====================================================================")
+	fmt.Println("NUnit Test Run Summary")
+	fmt.Printf("Pipeline ID: %s, Build ID: %s \n", tags["pipelineId"], tags["buildId"])
+	fmt.Println("====================================================================")
+	fmt.Println("📁 Total Cases: ", fields["total_cases"])
+	fmt.Println("✅ Total Passed: ", fields["total_passed"])
+	fmt.Println("❌ Total Failed: ", fields["total_failed"])
+	fmt.Println("⏸️ Total Skipped: ", fields["total_skipped"])
+	return nil
 }

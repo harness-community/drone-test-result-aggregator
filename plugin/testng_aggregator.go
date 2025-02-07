@@ -42,7 +42,7 @@ func (t *TestNgAggregator) Aggregate(groupName string) error {
 	err := Aggregate[TestNGResults](t.ReportsDir, t.Includes,
 		t.DbCredentials.InfluxDBURL, t.DbCredentials.InfluxDBToken,
 		t.DbCredentials.Organization, t.DbCredentials.Bucket, TestNgTool, groupName,
-		CalculateTestNgAggregate, GetTestNgDataMaps)
+		CalculateTestNgAggregate, GetTestNgDataMaps, ShowTestNgStats)
 	return err
 }
 
@@ -74,4 +74,8 @@ func GetTestNgDataMaps(pipelineId, buildNumber string,
 		"skipped": aggregateData.Skipped,
 	}
 	return tagsMap, fieldsMap
+}
+
+func ShowTestNgStats(tagsMap map[string]string, fieldsMap map[string]interface{}) error {
+	return nil
 }

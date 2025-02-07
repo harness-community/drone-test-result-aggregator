@@ -131,9 +131,6 @@ func ParseXmlReport[T any](filename string) T {
 		logrus.Println("Error reading XML file ", err)
 	}
 
-	fmt.Println("+++++++++++++++++++++++++++++++++")
-	fmt.Println(string(data))
-
 	var report T
 	err = xml.Unmarshal(data, &report)
 	if err != nil {
@@ -145,8 +142,8 @@ func ParseXmlReport[T any](filename string) T {
 func Aggregate[T any](reportsDir, includes string,
 	dbUrl, dbToken, dbOrg, dbBucket, measurementName, groupName string,
 	calculateAggregate func(testNgAggregatorList []T) T,
-	getDataMaps func(pipelineId, buildNumber string,
-		aggregateData T) (map[string]string, map[string]interface{})) error {
+	getDataMaps func(pipelineId, buildNumber string, aggregateData T) (map[string]string, map[string]interface{}),
+	showBuildStats func(tagsMap map[string]string, fieldsMap map[string]interface{}) error) error {
 
 	reportsRootDir := reportsDir
 	patterns := strings.Split(includes, ",")
@@ -167,6 +164,11 @@ func Aggregate[T any](reportsDir, includes string,
 	}
 
 	tagsMap, fieldsMap := getDataMaps(pipelineId, buildNumber, totalAggregate)
+	err = showBuildStats(tagsMap, fieldsMap)
+	if err != nil {
+		logrus.Println("Error showing build stats: ", err.Error())
+		return err
+	}
 	err = PersistToInfluxDb(dbUrl, dbToken, dbOrg, dbBucket, measurementName, groupName, tagsMap, fieldsMap)
 
 	return err
@@ -192,22 +194,6 @@ func PersistToInfluxDb(dbUrl, dbToken, dbOrganisation, dbBucket, measurementName
 	}
 	logrus.Println("Data persisted successfully to InfluxDB.")
 	return nil
-}
-
-func ToStructFromJsonString[T any](jsonStr string) (T, error) {
-	var v T
-	err := json.Unmarshal([]byte(jsonStr), &v)
-	return v, err
-}
-
-func ToJsonStringFromStruct[T any](v T) (string, error) {
-	jsonBytes, err := json.Marshal(v)
-
-	if err == nil {
-		return string(jsonBytes), nil
-	}
-
-	return "", err
 }
 
 func GetPipelineInfo() (string, string, error) {
@@ -256,12 +242,14 @@ func GetPreviousBuildId(measurementName, influxURL, token, org, bucket, currentP
 	}
 
 	if len(buildIds) == 0 {
+		fmt.Println("No build IDs found for measurement=", measurementName, "pipelineId=", currentPipelineId, "group=", groupId)
 		return 0, fmt.Errorf("no build IDs found for measurement=%s, pipelineId=%s, group=%s",
 			measurementName, currentPipelineId, groupId)
 	}
 
 	currentBuild, err := strconv.Atoi(currentBuildId)
 	if err != nil {
+		fmt.Println("Invalid currentBuildId: ", currentBuildId)
 		return 0, fmt.Errorf("invalid currentBuildId: %s", currentBuildId)
 	}
 
@@ -277,7 +265,6 @@ func GetPreviousBuildId(measurementName, influxURL, token, org, bucket, currentP
 
 func CompareResults(tool string, args Args) (string, error) {
 	var resultStr string
-	fmt.Println("CompareResults Tool: ", tool)
 	currentPipelineId, currentBuildNumber, err := GetPipelineInfo()
 	if err != nil {
 		fmt.Println("CompareResults Error getting pipeline info: ", err)
@@ -289,7 +276,6 @@ func CompareResults(tool string, args Args) (string, error) {
 		fmt.Println("CompareResults Error getting previous build id: ", err)
 		return resultStr, err
 	}
-	fmt.Println("Previous Build Id: ", previousBuildId)
 
 	resultStr, err = GetComparedDifferences(tool, args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket, currentPipelineId, args.GroupName, currentBuildNumber, strconv.Itoa(previousBuildId))
 	if err != nil {
@@ -300,9 +286,6 @@ func CompareResults(tool string, args Args) (string, error) {
 }
 
 func GetComparedDifferences(measurementName, influxURL, token, org, bucket, currentPipelineId, groupId, currentBuildId, previousBuildId string) (string, error) {
-
-	fmt.Println("GetComparedDifferences: enter")
-
 	client := influxdb2.NewClient(influxURL, token)
 	defer client.Close()
 
@@ -323,8 +306,6 @@ func GetComparedDifferences(measurementName, influxURL, token, org, bucket, curr
 
 func GetStoredBuildResults(client influxdb2.Client, org, bucket, measurementName,
 	pipelineId, groupId, buildId string) (map[string]float64, error) {
-
-	fmt.Println("fetchBuildFieldValues: enter")
 
 	query := fmt.Sprintf(`
 	from(bucket: "%s")
@@ -365,9 +346,6 @@ func GetStoredBuildResults(client influxdb2.Client, org, bucket, measurementName
 }
 
 func ComputeBuildResultDifferences(currentValues, previousValues map[string]float64) string {
-
-	fmt.Println("computeDifferences: enter")
-
 	resultDiffs := []ResultDiff{}
 	allFields := make(map[string]struct{})
 
@@ -437,4 +415,20 @@ func WriteToEnvVariable(key string, value interface{}) error {
 	}
 
 	return nil
+}
+
+func ToStructFromJsonString[T any](jsonStr string) (T, error) {
+	var v T
+	err := json.Unmarshal([]byte(jsonStr), &v)
+	return v, err
+}
+
+func ToJsonStringFromStruct[T any](v T) (string, error) {
+	jsonBytes, err := json.Marshal(v)
+
+	if err == nil {
+		return string(jsonBytes), nil
+	}
+
+	return "", err
 }
