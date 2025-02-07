@@ -82,7 +82,7 @@ func CompareBuildResults(args Args) error {
 	case JacocoTool:
 		resultStr, err = CompareResults(JacocoTool, args)
 	case JunitTool:
-		resultStr, err = CompareResults(JunitTool, args)
+		resultStr, err = CompareJunitResults(JunitTool, args)
 	case NunitTool:
 		resultStr, err = CompareResults(NunitTool, args)
 	case TestNgTool:
