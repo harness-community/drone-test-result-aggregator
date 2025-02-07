@@ -86,10 +86,11 @@ func GetNewTestNgAggregator(
 func (t *TestNgAggregator) Aggregate(groupName string) error {
 	logrus.Println("TestNgAggregator Aggregator Aggregate")
 
-	err := Aggregate[TestNGReport](t.ReportsDir, t.Includes,
+	tagsMap, fieldsMap, err := Aggregate[TestNGReport](t.ReportsDir, t.Includes,
 		t.DbCredentials.InfluxDBURL, t.DbCredentials.InfluxDBToken,
 		t.DbCredentials.Organization, t.DbCredentials.Bucket, TestNgTool, groupName,
 		CalculateTestNgAggregate, GetTestNgDataMaps, ShowTestNgStats)
+	_, _ = tagsMap, fieldsMap
 	return err
 }
 

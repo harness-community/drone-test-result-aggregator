@@ -70,13 +70,45 @@ func GetNewJacocoAggregator(reportsDir, reportsName, includes,
 
 func (j *JacocoAggregator) Aggregate(groupName string) error {
 	logrus.Println("Jacoco Aggregator Aggregate")
-	err := Aggregate[Report](j.ReportsDir, j.Includes,
+	tagsMap, fieldsMap, err := Aggregate[Report](j.ReportsDir, j.Includes,
 		j.DbCredentials.InfluxDBURL, j.DbCredentials.InfluxDBToken,
 		j.DbCredentials.Organization, j.DbCredentials.Bucket, JacocoTool, groupName,
 		CalculateJacocoAggregate, GetJacocoDataMaps, ShowJacocoStats)
+	_, _ = tagsMap, fieldsMap
+	ExportJacocoOutputVars(tagsMap, fieldsMap)
 	return err
 }
 
+func ExportJacocoOutputVars(tagsMap map[string]string, fieldsMap map[string]interface{}) {
+
+	instructionCoveragePercentage := CalculatePercentage(int(fieldsMap["instruction_covered_sum"].(float64)), int(fieldsMap["instruction_missed_sum"].(float64)))
+	branchCoveragePercentage := CalculatePercentage(int(fieldsMap["branch_covered_sum"].(float64)),
+		int(fieldsMap["branch_missed_sum"].(float64)))
+	lineCoveragePercentage := CalculatePercentage(int(fieldsMap["line_covered_sum"].(float64)),
+		int(fieldsMap["line_missed_sum"].(float64)))
+	complexityCoverage := CalculatePercentage(int(fieldsMap["complexity_covered_sum"].(float64)),
+		int(fieldsMap["complexity_missed_sum"].(float64)))
+	methodCoveragePercentage := CalculatePercentage(int(fieldsMap["method_covered_sum"].(float64)),
+		int(fieldsMap["method_missed_sum"].(float64)))
+	classCoveragePercentage := CalculatePercentage(int(fieldsMap["class_covered_sum"].(float64)),
+		int(fieldsMap["class_missed_sum"].(float64)))
+
+	outputVarsMap := map[string]interface{}{
+		"INSTRUCTION_COVERAGE": instructionCoveragePercentage,
+		"BRANCH_COVERAGE":      branchCoveragePercentage,
+		"LINE_COVERAGE":        lineCoveragePercentage,
+		"COMPLEXITY_COVERAGE":  complexityCoverage,
+		"METHOD_COVERAGE":      methodCoveragePercentage,
+		"CLASS_COVERAGE":       classCoveragePercentage,
+	}
+
+	for key, value := range outputVarsMap {
+		err := WriteToEnvVariable(key, value)
+		if err != nil {
+			logrus.Errorf("Error writing to env variable: %v", err)
+		}
+	}
+}
 func CalculateJacocoAggregate(reportsList []Report) Report {
 
 	var xmlFileReportData Report
@@ -183,4 +215,13 @@ func ShowJacocoStats(tags map[string]string, fields map[string]interface{}) erro
 	fmt.Printf("   ❌ Missed:   %.2f\n", fields["class_missed_sum"])
 	fmt.Println("====================================================================")
 	return nil
+}
+
+func CalculatePercentage(covered, missed int) string {
+	total := covered + missed
+	if total == 0 {
+		return "0%(0/0)"
+	}
+	percentage := (float64(covered) / float64(total)) * 100
+	return fmt.Sprintf("%.2f%%(%d/%d)", percentage, covered, total)
 }

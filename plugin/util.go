@@ -142,8 +142,13 @@ func ParseXmlReport[T any](filename string) T {
 func Aggregate[T any](reportsDir, includes string,
 	dbUrl, dbToken, dbOrg, dbBucket, measurementName, groupName string,
 	calculateAggregate func(testNgAggregatorList []T) T,
-	getDataMaps func(pipelineId, buildNumber string, aggregateData T) (map[string]string, map[string]interface{}),
-	showBuildStats func(tagsMap map[string]string, fieldsMap map[string]interface{}) error) error {
+	getDataMaps func(pipelineId,
+	buildNumber string, aggregateData T) (map[string]string, map[string]interface{}),
+	showBuildStats func(tagsMap map[string]string,
+	fieldsMap map[string]interface{}) error) (map[string]string, map[string]interface{}, error) {
+
+	tagsMap := map[string]string{}
+	fieldsMap := map[string]interface{}{}
 
 	reportsRootDir := reportsDir
 	patterns := strings.Split(includes, ",")
@@ -151,7 +156,7 @@ func Aggregate[T any](reportsDir, includes string,
 	aggregatorList, err := GetXmlReportData[T](reportsRootDir, patterns)
 	if err != nil {
 		logrus.Println("Error getting xml report data: ", err.Error())
-		return err
+		return tagsMap, fieldsMap, err
 	}
 
 	totalAggregate := calculateAggregate(aggregatorList)
@@ -160,19 +165,19 @@ func Aggregate[T any](reportsDir, includes string,
 	pipelineId, buildNumber, err := GetPipelineInfo()
 	if err != nil {
 		logrus.Println("Error getting pipeline info: ", err.Error())
-		return err
+		return tagsMap, fieldsMap, err
 	}
 
-	tagsMap, fieldsMap := getDataMaps(pipelineId, buildNumber, totalAggregate)
+	tagsMap, fieldsMap = getDataMaps(pipelineId, buildNumber, totalAggregate)
 	err = showBuildStats(tagsMap, fieldsMap)
 	if err != nil {
 		logrus.Println("Error showing build stats: ", err.Error())
-		return err
+		return tagsMap, fieldsMap, err
 	}
-	_ = ExportBuildStats(fieldsMap)
+
 	err = PersistToInfluxDb(dbUrl, dbToken, dbOrg, dbBucket, measurementName, groupName, tagsMap, fieldsMap)
 
-	return err
+	return tagsMap, fieldsMap, err
 }
 
 func PersistToInfluxDb(dbUrl, dbToken, dbOrganisation, dbBucket, measurementName, groupName string,
@@ -421,25 +426,53 @@ func ShowDiffAsTable(currentValues, previousValues map[string]float64) {
 	}
 	sort.Strings(sortedFields)
 
-	fmt.Println("+------------------+---------------+---------------+------------+------------------------+")
-	fmt.Println("|   Result Type    | Current Build | Previous Build | Difference | Percentage Difference |")
-	fmt.Println("+------------------+---------------+---------------+------------+------------------------+")
+	maxFieldLen := len("Result Type")
+	maxValueLen := len("Current Build")
+	maxDiffLen := len("Difference")
+	maxPercentDiffLen := len("Percentage Difference")
 
 	for _, field := range sortedFields {
-		currentVal := currentValues[field]
-		previousVal := previousValues[field]
-
-		diff := currentVal - previousVal
-		percentageDiff := 0.0
-		if previousVal != 0 {
-			percentageDiff = (diff / math.Abs(previousVal)) * 100
+		fieldLen := len(field)
+		if fieldLen > maxFieldLen {
+			maxFieldLen = fieldLen
 		}
 
-		fmt.Printf("| %-16s | %-13d | %-13d | %-10d | %-22.2f%% |\n",
-			field, int(currentVal), int(previousVal), int(diff), percentageDiff)
+		currentValStr := fmt.Sprintf("%d", int(currentValues[field]))
+		previousValStr := fmt.Sprintf("%d", int(previousValues[field]))
+		diffStr := fmt.Sprintf("%d", int(currentValues[field]-previousValues[field]))
+		percentageDiffStr := fmt.Sprintf("%.2f%%", computePercentageDiff(currentValues[field], previousValues[field]))
+
+		maxValueLen = max(maxValueLen, len(currentValStr), len(previousValStr))
+		maxDiffLen = max(maxDiffLen, len(diffStr))
+		maxPercentDiffLen = max(maxPercentDiffLen, len(percentageDiffStr))
 	}
 
-	fmt.Println("+------------------+---------------+---------------+------------+------------------------+")
+	headerFormat := fmt.Sprintf("| %%-%ds | %%-%ds | %%-%ds | %%-%ds | %%-%ds |\n",
+		maxFieldLen, maxValueLen, maxValueLen, maxDiffLen, maxPercentDiffLen)
+	rowFormat := fmt.Sprintf("| %%-%ds | %%-%dd | %%-%dd | %%-%dd | %%-%ds |\n",
+		maxFieldLen, maxValueLen, maxValueLen, maxDiffLen, maxPercentDiffLen)
+
+	fmt.Println(strings.Repeat("-", maxFieldLen+maxValueLen*2+maxDiffLen+maxPercentDiffLen+14))
+	fmt.Printf(headerFormat, "Result Type", "Current Build", "Previous Build", "Difference", "Percentage Difference")
+	fmt.Println(strings.Repeat("-", maxFieldLen+maxValueLen*2+maxDiffLen+maxPercentDiffLen+14))
+
+	for _, field := range sortedFields {
+		currentVal := int(currentValues[field])
+		previousVal := int(previousValues[field])
+		diff := currentVal - previousVal
+		percentageDiff := computePercentageDiff(currentValues[field], previousValues[field])
+
+		fmt.Printf(rowFormat, field, currentVal, previousVal, diff, fmt.Sprintf("%.2f%%", percentageDiff))
+	}
+
+	fmt.Println(strings.Repeat("-", maxFieldLen+maxValueLen*2+maxDiffLen+maxPercentDiffLen+14))
+}
+
+func computePercentageDiff(currentVal, previousVal float64) float64 {
+	if previousVal == 0 {
+		return 0.0
+	}
+	return (currentVal - previousVal) / math.Abs(previousVal) * 100
 }
 
 func WriteToEnvVariable(key string, value interface{}) error {

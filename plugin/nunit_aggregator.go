@@ -38,11 +38,11 @@ func GetNewNunitAggregator(
 func (n *NunitAggregator) Aggregate(groupName string) error {
 	logrus.Println("NUnit Aggregator Aggregate (Using <test-run> Summary)")
 
-	err := Aggregate[TestRunSummary](n.ReportsDir, n.Includes,
+	tagsMap, fieldsMap, err := Aggregate[TestRunSummary](n.ReportsDir, n.Includes,
 		n.DbCredentials.InfluxDBURL, n.DbCredentials.InfluxDBToken,
 		n.DbCredentials.Organization, n.DbCredentials.Bucket, NunitTool, groupName,
 		CalculateNunitAggregate, GetNunitDataMaps, ShowNunitStats)
-
+	_, _ = tagsMap, fieldsMap
 	return err
 }
 

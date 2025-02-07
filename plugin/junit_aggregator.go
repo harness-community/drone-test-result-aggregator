@@ -90,7 +90,7 @@ func (j *JunitAggregator) Aggregate(groupName string) error {
 		logrus.Println("Error showing build stats: ", err.Error())
 		return err
 	}
-	_ = ExportBuildStats(fieldsMap)
+
 	err = PersistToInfluxDb(j.DbCredentials.InfluxDBURL,
 		j.DbCredentials.InfluxDBToken, j.DbCredentials.Organization, j.DbCredentials.Bucket,
 		JunitTool, groupName, tagsMap, fieldsMap)
