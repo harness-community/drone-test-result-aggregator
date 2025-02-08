@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"github.com/bmatcuk/doublestar/v4"
@@ -91,6 +92,11 @@ func (j *JunitAggregator) Aggregate(groupName string) error {
 		return err
 	}
 
+	err = WriteJunitMetricsCsvData(TestResultsDataFileCsv, tagsMap, fieldsMap)
+	if err != nil {
+		logrus.Println("Error writing Junit metrics to CSV: ", err.Error())
+	}
+
 	err = PersistToInfluxDb(j.DbCredentials.InfluxDBURL,
 		j.DbCredentials.InfluxDBToken, j.DbCredentials.Organization, j.DbCredentials.Bucket,
 		JunitTool, groupName, tagsMap, fieldsMap)
@@ -99,13 +105,11 @@ func (j *JunitAggregator) Aggregate(groupName string) error {
 }
 
 func GetJunitDataMaps(pipelineId, buildNumber string, aggregateData TestStats) (map[string]string, map[string]interface{}) {
-	// Metadata Tags (used for filtering)
 	tags := map[string]string{
 		"pipelineId": pipelineId,
 		"buildId":    buildNumber,
 	}
 
-	// Numeric Fields (used for querying)
 	fields := map[string]interface{}{
 		"total_tests":   aggregateData.TestCount,
 		"failed_tests":  aggregateData.FailCount,
@@ -118,17 +122,85 @@ func GetJunitDataMaps(pipelineId, buildNumber string, aggregateData TestStats) (
 }
 
 func ShowJunitStats(tags map[string]string, fields map[string]interface{}) error {
-	fmt.Println("")
-	fmt.Println("====================================================================")
-	fmt.Println("JUnit Test Run Summary")
-	fmt.Printf("Pipeline ID: %s, Build ID: %s \n", tags["pipelineId"], tags["buildId"])
-	fmt.Println("====================================================================")
-	fmt.Println("📁 Total Cases:   ", fields["total_tests"])
-	fmt.Println("✅ Total Passed:  ", fields["passed_tests"])
-	fmt.Println("❌ Total Failed:  ", fields["failed_tests"])
-	fmt.Println("⏸️ Total Skipped: ", fields["skipped_tests"])
-	fmt.Println("🛑 Total Errors:  ", fields["errors_count"])
-	fmt.Println("====================================================================")
+	border := "============================================="
+	separator := "---------------------------------------------"
+
+	table := []string{
+		border,
+		"  JUnit Test Run Summary",
+		border,
+		fmt.Sprintf("  Pipeline ID: %-40s", tags["pipelineId"]),
+		fmt.Sprintf("  Build ID: %-40s", tags["buildId"]),
+		border,
+		fmt.Sprintf("| %-22s | %-10s |", "Test Category", "Count            "),
+		separator,
+		fmt.Sprintf("| 📁 Total Cases      | %10.2f          |", float64(fields["total_tests"].(int))),
+		fmt.Sprintf("| ✅ Total Passed     | %10.2f          |", float64(fields["passed_tests"].(int))),
+		fmt.Sprintf("| ❌ Total Failed     | %10.2f          |", float64(fields["failed_tests"].(int))),
+		fmt.Sprintf("| ⏸️ Total Skipped    | %10.2f          |", float64(fields["skipped_tests"].(int))),
+		fmt.Sprintf("| 🛑 Total Errors     | %10.2f          |", float64(fields["errors_count"].(int))),
+		border,
+	}
+
+	fmt.Println(strings.Join(table, "\n"))
+	return nil
+}
+
+func WriteJunitMetricsCsvData(csvFileName string, tagsMap map[string]string, fieldsMap map[string]interface{}) error {
+	file, err := os.Create(csvFileName)
+	if err != nil {
+		return fmt.Errorf("failed to create CSV file: %w", err)
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	var csvBuffer strings.Builder
+	bufferWriter := csv.NewWriter(&csvBuffer)
+
+	header := []string{"Pipeline ID", "Build ID", "Test Category", "Count"}
+	if err := writer.Write(header); err != nil {
+		return fmt.Errorf("failed to write CSV header to file: %w", err)
+	}
+	if err := bufferWriter.Write(header); err != nil {
+		return fmt.Errorf("failed to write CSV header to buffer: %w", err)
+	}
+
+	junitData := [][]string{
+		{tagsMap["pipelineId"], tagsMap["buildId"], "Total Cases",
+			fmt.Sprintf("%.0f", float64(fieldsMap["total_tests"].(int)))},
+		{tagsMap["pipelineId"], tagsMap["buildId"], "Total Passed",
+			fmt.Sprintf("%.0f", float64(fieldsMap["passed_tests"].(int)))},
+		{tagsMap["pipelineId"], tagsMap["buildId"], "Total Failed",
+			fmt.Sprintf("%.0f", float64(fieldsMap["failed_tests"].(int)))},
+		{tagsMap["pipelineId"], tagsMap["buildId"], "Total Skipped",
+			fmt.Sprintf("%.0f", float64(fieldsMap["skipped_tests"].(int)))},
+		{tagsMap["pipelineId"], tagsMap["buildId"], "Total Errors",
+			fmt.Sprintf("%.0f", float64(fieldsMap["errors_count"].(int)))},
+	}
+
+	for _, row := range junitData {
+		if err := writer.Write(row); err != nil {
+			return fmt.Errorf("failed to write CSV row to file: %w", err)
+		}
+		if err := bufferWriter.Write(row); err != nil {
+			return fmt.Errorf("failed to write CSV row to buffer: %w", err)
+		}
+	}
+
+	writer.Flush()
+	bufferWriter.Flush()
+
+	if err := writer.Error(); err != nil {
+		return fmt.Errorf("error flushing CSV writer to file: %w", err)
+	}
+
+	err = WriteToEnvVariable(TestResultsDataFile, csvFileName)
+	if err != nil {
+		logrus.Errorf("Error writing CSV file path to env variable: %v", err)
+		return err
+	}
+
+	logrus.Infof("JUnit test metrics exported to %s and stored in JUNIT_METRICS_CSV_FILE env variable", csvFileName)
 	return nil
 }
 
