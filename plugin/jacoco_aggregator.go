@@ -1,9 +1,12 @@
 package plugin
 
 import (
+	"encoding/csv"
 	"encoding/xml"
 	"fmt"
 	"github.com/sirupsen/logrus"
+	"os"
+	"strings"
 )
 
 type JacocoAggregator struct {
@@ -69,19 +72,27 @@ func GetNewJacocoAggregator(reportsDir, reportsName, includes,
 }
 
 func (j *JacocoAggregator) Aggregate(groupName string) error {
+
 	logrus.Println("Jacoco Aggregator Aggregate")
 	tagsMap, fieldsMap, err := Aggregate[Report](j.ReportsDir, j.Includes,
 		j.DbCredentials.InfluxDBURL, j.DbCredentials.InfluxDBToken,
 		j.DbCredentials.Organization, j.DbCredentials.Bucket, JacocoTool, groupName,
 		CalculateJacocoAggregate, GetJacocoDataMaps, ShowJacocoStats)
-	_, _ = tagsMap, fieldsMap
-	ExportJacocoOutputVars(tagsMap, fieldsMap)
-	return err
+
+	// Metrics Data
+	err = ExportJacocoOutputVars(tagsMap, fieldsMap)
+	if err != nil {
+		logrus.Errorf("Error exporting Jacoco coverage metrics: %v", err)
+		return err
+	}
+
+	return nil
 }
 
-func ExportJacocoOutputVars(tagsMap map[string]string, fieldsMap map[string]interface{}) {
+func ExportJacocoOutputVars(tagsMap map[string]string, fieldsMap map[string]interface{}) error {
 
-	instructionCoveragePercentage := CalculatePercentage(int(fieldsMap["instruction_covered_sum"].(float64)), int(fieldsMap["instruction_missed_sum"].(float64)))
+	instructionCoveragePercentage := CalculatePercentage(int(fieldsMap["instruction_covered_sum"].(float64)),
+		int(fieldsMap["instruction_missed_sum"].(float64)))
 	branchCoveragePercentage := CalculatePercentage(int(fieldsMap["branch_covered_sum"].(float64)),
 		int(fieldsMap["branch_missed_sum"].(float64)))
 	lineCoveragePercentage := CalculatePercentage(int(fieldsMap["line_covered_sum"].(float64)),
@@ -106,9 +117,78 @@ func ExportJacocoOutputVars(tagsMap map[string]string, fieldsMap map[string]inte
 		err := WriteToEnvVariable(key, value)
 		if err != nil {
 			logrus.Errorf("Error writing to env variable: %v", err)
+			return err
 		}
 	}
+	return nil
 }
+
+func WriteJacocoMetricsCsvData(csvFileName string, tagsMap map[string]string, fieldsMap map[string]interface{}) error {
+	instructionCoveragePercentage := CalculatePercentage(int(fieldsMap["instruction_covered_sum"].(float64)),
+		int(fieldsMap["instruction_missed_sum"].(float64)))
+	branchCoveragePercentage := CalculatePercentage(int(fieldsMap["branch_covered_sum"].(float64)),
+		int(fieldsMap["branch_missed_sum"].(float64)))
+	lineCoveragePercentage := CalculatePercentage(int(fieldsMap["line_covered_sum"].(float64)),
+		int(fieldsMap["line_missed_sum"].(float64)))
+	complexityCoverage := CalculatePercentage(int(fieldsMap["complexity_covered_sum"].(float64)),
+		int(fieldsMap["complexity_missed_sum"].(float64)))
+	methodCoveragePercentage := CalculatePercentage(int(fieldsMap["method_covered_sum"].(float64)),
+		int(fieldsMap["method_missed_sum"].(float64)))
+	classCoveragePercentage := CalculatePercentage(int(fieldsMap["class_total_sum"].(float64)),
+		int(fieldsMap["class_missed_sum"].(float64)))
+
+	coverageData := [][]string{
+		{"Metric", "Percentage"},
+		{"INSTRUCTION_COVERAGE", fmt.Sprintf("%.2f%%", instructionCoveragePercentage)},
+		{"BRANCH_COVERAGE", fmt.Sprintf("%.2f%%", branchCoveragePercentage)},
+		{"LINE_COVERAGE", fmt.Sprintf("%.2f%%", lineCoveragePercentage)},
+		{"COMPLEXITY_COVERAGE", fmt.Sprintf("%.2f%%", complexityCoverage)},
+		{"METHOD_COVERAGE", fmt.Sprintf("%.2f%%", methodCoveragePercentage)},
+		{"CLASS_COVERAGE", fmt.Sprintf("%.2f%%", classCoveragePercentage)},
+	}
+
+	file, err := os.Create(csvFileName)
+	if err != nil {
+		return fmt.Errorf("failed to create CSV file: %w", err)
+	}
+	defer file.Close()
+
+	var csvBuffer strings.Builder
+	writer := csv.NewWriter(file)
+	bufferWriter := csv.NewWriter(&csvBuffer)
+
+	for _, row := range coverageData {
+		if err := writer.Write(row); err != nil {
+			return fmt.Errorf("failed to write CSV row to file: %w", err)
+		}
+		if err := bufferWriter.Write(row); err != nil {
+			return fmt.Errorf("failed to write CSV row to buffer: %w", err)
+		}
+	}
+
+	writer.Flush()
+	bufferWriter.Flush()
+
+	if err := writer.Error(); err != nil {
+		return fmt.Errorf("error flushing CSV writer to file: %w", err)
+	}
+
+	err = WriteToEnvVariable(TestResultsData, csvBuffer.String())
+	if err != nil {
+		logrus.Errorf("Error writing CSV content to env variable: %v", err)
+		return err
+	}
+
+	err = WriteToEnvVariable(TestResultsDataFile, csvFileName)
+	if err != nil {
+		logrus.Errorf("Error writing CSV file path to env variable: %v", err)
+		return err
+	}
+
+	logrus.Infof("Jacoco coverage metrics exported to %s and stored in JACOCO_COVERAGE_CSV env variable", csvFileName)
+	return nil
+}
+
 func CalculateJacocoAggregate(reportsList []Report) Report {
 
 	var xmlFileReportData Report
@@ -178,45 +258,6 @@ func addToSum(totalSum *float64, coveredSum *float64, missedSum *float64,
 	*missedSum += missed
 }
 
-func ShowJacocoStats(tags map[string]string, fields map[string]interface{}) error {
-	fmt.Println("")
-	fmt.Println("====================================================================")
-	fmt.Println("Jacoco Code Coverage Summary")
-	fmt.Printf("Pipeline ID: %s, Build ID: %s \n", tags["pipelineId"], tags["buildId"])
-	fmt.Println("====================================================================")
-	fmt.Println("Instruction Coverage:")
-	fmt.Printf("   Total:    %.2f\n", fields["instruction_total_sum"])
-	fmt.Printf("   ✅ Covered:  %.2f\n", fields["instruction_covered_sum"])
-	fmt.Printf("   ❌ Missed:   %.2f\n", fields["instruction_missed_sum"])
-	fmt.Println("--------------------------------------------------------------------")
-	fmt.Println(" Branch Coverage:")
-	fmt.Printf("   Total:    %.2f\n", fields["branch_total_sum"])
-	fmt.Printf("   ✅ Covered:  %.2f\n", fields["branch_covered_sum"])
-	fmt.Printf("   ❌ Missed:   %.2f\n", fields["branch_missed_sum"])
-	fmt.Println("--------------------------------------------------------------------")
-	fmt.Println(" Line Coverage:")
-	fmt.Printf("    Total:    %.2f\n", fields["line_total_sum"])
-	fmt.Printf("   ✅ Covered:  %.2f\n", fields["line_covered_sum"])
-	fmt.Printf("   ❌ Missed:   %.2f\n", fields["line_missed_sum"])
-	fmt.Println("--------------------------------------------------------------------")
-	fmt.Println(" Complexity Coverage:")
-	fmt.Printf("    Total:    %.2f\n", fields["complexity_total_sum"])
-	fmt.Printf("   ✅ Covered:  %.2f\n", fields["complexity_covered_sum"])
-	fmt.Printf("   ❌ Missed:   %.2f\n", fields["complexity_missed_sum"])
-	fmt.Println("--------------------------------------------------------------------")
-	fmt.Println(" Method Coverage:")
-	fmt.Printf("    Total:    %.2f\n", fields["method_total_sum"])
-	fmt.Printf("   ✅ Covered:  %.2f\n", fields["method_covered_sum"])
-	fmt.Printf("   ❌ Missed:   %.2f\n", fields["method_missed_sum"])
-	fmt.Println("--------------------------------------------------------------------")
-	fmt.Println("️ Class Coverage:")
-	fmt.Printf("    Total:    %.2f\n", fields["class_total_sum"])
-	fmt.Printf("   ✅ Covered:  %.2f\n", fields["class_covered_sum"])
-	fmt.Printf("   ❌ Missed:   %.2f\n", fields["class_missed_sum"])
-	fmt.Println("====================================================================")
-	return nil
-}
-
 func CalculatePercentage(covered, missed int) string {
 	total := covered + missed
 	if total == 0 {
@@ -224,4 +265,36 @@ func CalculatePercentage(covered, missed int) string {
 	}
 	percentage := (float64(covered) / float64(total)) * 100
 	return fmt.Sprintf("%.2f%%(%d/%d)", percentage, covered, total)
+}
+
+func ShowJacocoStats(tags map[string]string, fields map[string]interface{}) error {
+	border := "==================================================================="
+	separator := "-------------------------------------------------------------------"
+
+	table := []string{
+		border,
+		fmt.Sprintf("  %-48s %-40s ", "Jacoco Code Coverage Summary ", ""),
+		border,
+		fmt.Sprintf("  %-20s: %-65s ", "Pipeline ID", tags["pipelineId"]),
+		fmt.Sprintf("  %-20s: %-65s ", "Build ID", tags["buildId"]),
+		border,
+		fmt.Sprintf("| %-25s | %-10s | %-10s | %-10s |", "Coverage Type", "Total", "Covered", "Missed"),
+		separator,
+		fmt.Sprintf("| %-25s | %10.2f | %10.2f | %10.2f |", "✅ Instruction Coverage",
+			fields["instruction_total_sum"], fields["instruction_covered_sum"], fields["instruction_missed_sum"]),
+		fmt.Sprintf("| %-25s | %10.2f | %10.2f | %10.2f |", "✅ Branch Coverage",
+			fields["branch_total_sum"], fields["branch_covered_sum"], fields["branch_missed_sum"]),
+		fmt.Sprintf("| %-25s | %10.2f | %10.2f | %10.2f |", "✅ Line Coverage",
+			fields["line_total_sum"], fields["line_covered_sum"], fields["line_missed_sum"]),
+		fmt.Sprintf("| %-25s | %10.2f | %10.2f | %10.2f |", "✅ Complexity Coverage",
+			fields["complexity_total_sum"], fields["complexity_covered_sum"], fields["complexity_missed_sum"]),
+		fmt.Sprintf("| %-25s | %10.2f | %10.2f | %10.2f |", "✅ Method Coverage",
+			fields["method_total_sum"], fields["method_covered_sum"], fields["method_missed_sum"]),
+		fmt.Sprintf("| %-25s | %10.2f | %10.2f | %10.2f |", "✅ Class Coverage",
+			fields["class_total_sum"], fields["class_covered_sum"], fields["class_missed_sum"]),
+		border,
+	}
+
+	fmt.Println(strings.Join(table, "\n"))
+	return nil
 }

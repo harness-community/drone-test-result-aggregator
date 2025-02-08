@@ -6,7 +6,6 @@ package plugin
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"github.com/sirupsen/logrus"
@@ -77,6 +76,7 @@ func StoreResultsToInfluxDb(args Args) error {
 func CompareBuildResults(args Args) error {
 	var resultStr string
 	var err error
+	diffFileName := "build_results_diff.csv"
 
 	switch args.Tool {
 	case JacocoTool:
@@ -96,12 +96,22 @@ func CompareBuildResults(args Args) error {
 		logrus.Println("Unable to compare results ", err)
 		return err
 	}
-
-	err = WriteToEnvVariable("BUILD_RESULTS_DIFF", resultStr)
-	return err
+	err = ExportComparisonResults(diffFileName, resultStr, TestResultsDiffFileOutputVar)
+	if err != nil {
+		logrus.Println("Unable to export comparison results ", err)
+		return err
+	}
+	return nil
 }
 
-func ConvertToBase64(input string) string {
-	encoded := base64.StdEncoding.EncodeToString([]byte(input))
-	return encoded
+func ExportComparisonResults(resultFileName, resultStr, outputVarName string) error {
+	err := WriteStrToFile(resultFileName, resultStr)
+	if err != nil {
+		logrus.Println("Unable to write comparison results to file ", err)
+	}
+	err = WriteToEnvVariable(outputVarName, resultFileName)
+	if err != nil {
+		logrus.Println("Unable to write comparison results to env variable ", err)
+	}
+	return err
 }

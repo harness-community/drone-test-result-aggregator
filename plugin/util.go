@@ -6,6 +6,7 @@ package plugin
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
@@ -23,13 +24,17 @@ import (
 )
 
 const (
-	JacocoTool        = "jacoco"
-	JunitTool         = "junit"
-	NunitTool         = "nunit"
-	TestNgTool        = "testng"
-	SaveToDb          = "save-to-db"
-	PipeLineIdEnvVar  = "HARNESS_PIPELINE_ID"
-	BuildNumberEnvVar = "HARNESS_BUILD_ID"
+	JacocoTool                   = "jacoco"
+	JunitTool                    = "junit"
+	NunitTool                    = "nunit"
+	TestNgTool                   = "testng"
+	SaveToDb                     = "save-to-db"
+	PipeLineIdEnvVar             = "HARNESS_PIPELINE_ID"
+	BuildNumberEnvVar            = "HARNESS_BUILD_ID"
+	TestResultsData              = "TEST_RESULTS_DATA"
+	TestResultsDataFile          = "TEST_RESULTS_DATA_FILE"
+	TestResultsDiffFileOutputVar = "TEST_RESULTS_DIFF_FILE"
+	TestResultsDiffData          = "TEST_RESULTS_DIFF_DATA"
 )
 
 type ResultBasicInfo struct {
@@ -361,7 +366,6 @@ func ExportBuildStats(fieldsMap map[string]interface{}) string {
 }
 
 func ComputeBuildResultDifferences(currentValues, previousValues map[string]float64) string {
-	resultDiffs := []ResultDiff{}
 	allFields := make(map[string]struct{})
 
 	for field := range currentValues {
@@ -371,12 +375,15 @@ func ComputeBuildResultDifferences(currentValues, previousValues map[string]floa
 		allFields[field] = struct{}{}
 	}
 
-	retStrMap := map[string]interface{}{}
+	var csvBuffer strings.Builder
+	writer := csv.NewWriter(&csvBuffer)
+
+	writer.Write([]string{"Field Name", "Current", "Previous", "Difference", "Percentage Difference"})
+
 	for field := range allFields {
 		currentValue, currentExists := currentValues[field]
 		previousValue, previousExists := previousValues[field]
 
-		isCompareValid := currentExists && previousExists
 		if !currentExists {
 			currentValue = 0
 		}
@@ -390,16 +397,19 @@ func ComputeBuildResultDifferences(currentValues, previousValues map[string]floa
 			percentageDiff = (diff / math.Abs(previousValue)) * 100
 		}
 
-		retStrMap[field] = fmt.Sprintf("\"Current = %.2f, Previous = %.2f, Difference = %.2f, Percentage Difference = %.2f\"",
-			currentValue, previousValue, diff, percentageDiff)
-		resultDiffs = append(resultDiffs, ResultDiff{
-			FieldName:            field,
-			CurrentBuildValue:    currentValue,
-			PreviousBuildValue:   previousValue,
-			Difference:           diff,
-			PercentageDifference: percentageDiff,
-			IsCompareValid:       isCompareValid,
+		writer.Write([]string{
+			field,
+			fmt.Sprintf("%.2f", currentValue),
+			fmt.Sprintf("%.2f", previousValue),
+			fmt.Sprintf("%.2f", diff),
+			fmt.Sprintf("%.2f%%", percentageDiff),
 		})
+	}
+
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		fmt.Println("Error flushing CSV writer:", err)
+		return ""
 	}
 
 	fmt.Println("")
@@ -407,8 +417,7 @@ func ComputeBuildResultDifferences(currentValues, previousValues map[string]floa
 	ShowDiffAsTable(currentValues, previousValues)
 	fmt.Println("")
 
-	retJsonStr, _ := ToJsonStringFromStringMap(retStrMap)
-	return retJsonStr
+	return csvBuffer.String()
 }
 
 func ShowDiffAsTable(currentValues, previousValues map[string]float64) {
@@ -515,4 +524,19 @@ func ToJsonStringFromStringMap(m map[string]interface{}) (string, error) {
 		return string(outBytes), nil
 	}
 	return "", err
+}
+
+func WriteStrToFile(filePath, data string) error {
+	file, err := os.Create(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = file.WriteString(data)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
