@@ -1,10 +1,13 @@
 package plugin
 
 import (
+	"encoding/csv"
 	"encoding/xml"
 	"fmt"
 	"github.com/sirupsen/logrus"
+	"os"
 	"strconv"
+	"strings"
 )
 
 type TestNgAggregator struct {
@@ -90,8 +93,18 @@ func (t *TestNgAggregator) Aggregate(groupName string) error {
 		t.DbCredentials.InfluxDBURL, t.DbCredentials.InfluxDBToken,
 		t.DbCredentials.Organization, t.DbCredentials.Bucket, TestNgTool, groupName,
 		CalculateTestNgAggregate, GetTestNgDataMaps, ShowTestNgStats)
-	_, _ = tagsMap, fieldsMap
-	return err
+	if err != nil {
+		logrus.Errorf("Error aggregating TestNG results: %v", err)
+		return err
+	}
+
+	err = WriteTestNgMetricsCsvData(TestResultsDataFileCsv, tagsMap, fieldsMap)
+	if err != nil {
+		logrus.Errorf("Error writing TestNG metrics to CSV file: %v", err)
+		return err
+	}
+	return nil
+
 }
 
 func CalculateTestNgAggregate(testNgAggregatorList []TestNGReport) TestNGReport {
@@ -183,16 +196,78 @@ func aggregateClassResults(class Class) (Results, []string, []string) {
 	return results, failedTests, skippedTests
 }
 
+func WriteTestNgMetricsCsvData(csvFileName string, tagsMap map[string]string, fieldsMap map[string]interface{}) error {
+	file, err := os.Create(csvFileName)
+	if err != nil {
+		return fmt.Errorf("failed to create CSV file: %w", err)
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	var csvBuffer strings.Builder
+	bufferWriter := csv.NewWriter(&csvBuffer)
+
+	header := []string{"Pipeline ID", "Build ID", "Test Category", "Count"}
+	if err := writer.Write(header); err != nil {
+		return fmt.Errorf("failed to write CSV header to file: %w", err)
+	}
+	if err := bufferWriter.Write(header); err != nil {
+		return fmt.Errorf("failed to write CSV header to buffer: %w", err)
+	}
+
+	testNgData := [][]string{
+		{tagsMap["pipeline_id"], tagsMap["build_number"], "Total Cases", fmt.Sprintf("%d", fieldsMap["total_cases"].(int))},
+		{tagsMap["pipeline_id"], tagsMap["build_number"], "Total Failed", fmt.Sprintf("%d", fieldsMap["total_failed"].(int))},
+		{tagsMap["pipeline_id"], tagsMap["build_number"], "Total Skipped", fmt.Sprintf("%d", fieldsMap["total_skipped"].(int))},
+		{tagsMap["pipeline_id"], tagsMap["build_number"], "Total Duration (ms)", fmt.Sprintf("%.2f", fieldsMap["duration_ms"].(float64))},
+	}
+
+	for _, row := range testNgData {
+		if err := writer.Write(row); err != nil {
+			return fmt.Errorf("failed to write CSV row to file: %w", err)
+		}
+		if err := bufferWriter.Write(row); err != nil {
+			return fmt.Errorf("failed to write CSV row to buffer: %w", err)
+		}
+	}
+
+	writer.Flush()
+	bufferWriter.Flush()
+
+	if err := writer.Error(); err != nil {
+		return fmt.Errorf("error flushing CSV writer to file: %w", err)
+	}
+
+	err = WriteToEnvVariable(TestResultsDataFile, csvFileName)
+	if err != nil {
+		logrus.Errorf("Error writing CSV file path to env variable: %v", err)
+		return err
+	}
+
+	logrus.Infof("TestNG test metrics exported to %s and stored in TESTNG_METRICS_CSV_FILE env variable", csvFileName)
+	return nil
+}
+
 func ShowTestNgStats(tagsMap map[string]string, fieldsMap map[string]interface{}) error {
-	fmt.Println("")
-	fmt.Println("====================================================================")
-	fmt.Println("TestNG Test Run Summary")
-	fmt.Printf("Pipeline ID: %s, Build ID: %s \n", tagsMap["pipeline_id"], tagsMap["build_number"])
-	fmt.Println("====================================================================")
-	fmt.Println("📁 Total Cases:   ", fieldsMap["total_cases"])
-	fmt.Println("❌ Total Failed:  ", fieldsMap["total_failed"])
-	fmt.Println("⏸️ Total Skipped: ", fieldsMap["total_skipped"])
-	fmt.Println("⏱️ Total Duration (ms): ", fieldsMap["duration_ms"])
-	fmt.Println("====================================================================")
+	border := "==================================================================="
+	separator := "-------------------------------------------------------------------"
+
+	table := []string{
+		border,
+		"  🧪 TestNG Test Run Summary",
+		border,
+		fmt.Sprintf("  Pipeline ID      : %-40s", tagsMap["pipelineId"]),
+		fmt.Sprintf("  Build ID         : %-40s", tagsMap["buildId"]),
+		border,
+		fmt.Sprintf("| %-22s | %-10s |", "Test Category", "Count"),
+		separator,
+		fmt.Sprintf("| 📁 Total Cases     | %10.0f    |", float64(fieldsMap["total_cases"].(int))),
+		fmt.Sprintf("| ❌ Total Failed     | %10.0f    |", float64(fieldsMap["total_failed"].(int))),
+		fmt.Sprintf("| ⏸️ Total Skipped   | %10.0f    |", float64(fieldsMap["total_skipped"].(int))),
+		fmt.Sprintf("| ⏱️ Total Duration  | %10.2f ms |", fieldsMap["duration_ms"].(float64)),
+		border,
+	}
+
+	fmt.Println(strings.Join(table, "\n"))
 	return nil
 }
