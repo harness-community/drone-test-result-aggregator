@@ -85,6 +85,7 @@ func (j *JacocoAggregator) Aggregate(groupName string) error {
 		logrus.Errorf("Error exporting Jacoco coverage metrics: %v", err)
 		return err
 	}
+	err = WriteJacocoMetricsCsvData(TestResultsDataFileCsv, tagsMap, fieldsMap)
 
 	return nil
 }
@@ -172,13 +173,7 @@ func WriteJacocoMetricsCsvData(csvFileName string, tagsMap map[string]string, fi
 	if err := writer.Error(); err != nil {
 		return fmt.Errorf("error flushing CSV writer to file: %w", err)
 	}
-
-	err = WriteToEnvVariable(TestResultsData, csvBuffer.String())
-	if err != nil {
-		logrus.Errorf("Error writing CSV content to env variable: %v", err)
-		return err
-	}
-
+	
 	err = WriteToEnvVariable(TestResultsDataFile, csvFileName)
 	if err != nil {
 		logrus.Errorf("Error writing CSV file path to env variable: %v", err)
@@ -197,22 +192,28 @@ func CalculateJacocoAggregate(reportsList []Report) Report {
 		for _, counter := range report.Counters {
 			switch counter.Type {
 			case "INSTRUCTION":
-				addToSum(&xmlFileReportData.InstructionTotalSum, &xmlFileReportData.InstructionCoveredSum, &xmlFileReportData.InstructionMissedSum,
+				addToSum(&xmlFileReportData.InstructionTotalSum, &xmlFileReportData.InstructionCoveredSum,
+					&xmlFileReportData.InstructionMissedSum,
 					float64(counter.Covered), float64(counter.Missed))
 			case "BRANCH":
-				addToSum(&xmlFileReportData.BranchTotalSum, &xmlFileReportData.BranchCoveredSum, &xmlFileReportData.BranchMissedSum,
+				addToSum(&xmlFileReportData.BranchTotalSum,
+					&xmlFileReportData.BranchCoveredSum, &xmlFileReportData.BranchMissedSum,
 					float64(counter.Covered), float64(counter.Missed))
 			case "LINE":
-				addToSum(&xmlFileReportData.LineTotalSum, &xmlFileReportData.LineCoveredSum, &xmlFileReportData.LineMissedSum,
+				addToSum(&xmlFileReportData.LineTotalSum,
+					&xmlFileReportData.LineCoveredSum, &xmlFileReportData.LineMissedSum,
 					float64(counter.Covered), float64(counter.Missed))
 			case "COMPLEXITY":
-				addToSum(&xmlFileReportData.ComplexityTotalSum, &xmlFileReportData.ComplexityCoveredSum, &xmlFileReportData.ComplexityMissedSum,
+				addToSum(&xmlFileReportData.ComplexityTotalSum,
+					&xmlFileReportData.ComplexityCoveredSum, &xmlFileReportData.ComplexityMissedSum,
 					float64(counter.Covered), float64(counter.Missed))
 			case "METHOD":
-				addToSum(&xmlFileReportData.MethodTotalSum, &xmlFileReportData.MethodCoveredSum, &xmlFileReportData.MethodMissedSum,
+				addToSum(&xmlFileReportData.MethodTotalSum,
+					&xmlFileReportData.MethodCoveredSum, &xmlFileReportData.MethodMissedSum,
 					float64(counter.Covered), float64(counter.Missed))
 			case "CLASS":
-				addToSum(&xmlFileReportData.ClassTotalSum, &xmlFileReportData.ClassCoveredSum, &xmlFileReportData.ClassMissedSum,
+				addToSum(&xmlFileReportData.ClassTotalSum,
+					&xmlFileReportData.ClassCoveredSum, &xmlFileReportData.ClassMissedSum,
 					float64(counter.Covered), float64(counter.Missed))
 			}
 		}

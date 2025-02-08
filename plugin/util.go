@@ -35,6 +35,8 @@ const (
 	TestResultsDataFile          = "TEST_RESULTS_DATA_FILE"
 	TestResultsDiffFileOutputVar = "TEST_RESULTS_DIFF_FILE"
 	TestResultsDiffData          = "TEST_RESULTS_DIFF_DATA"
+	BuildResultsDiffCsv          = "build_results_diff.csv"
+	TestResultsDataFileCsv       = "test_results_data.csv"
 )
 
 type ResultBasicInfo struct {

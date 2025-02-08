@@ -76,7 +76,7 @@ func StoreResultsToInfluxDb(args Args) error {
 func CompareBuildResults(args Args) error {
 	var resultStr string
 	var err error
-	diffFileName := "build_results_diff.csv"
+	diffFileName := BuildResultsDiffCsv
 
 	switch args.Tool {
 	case JacocoTool:
