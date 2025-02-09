@@ -6,6 +6,8 @@ package plugin
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"github.com/sirupsen/logrus"
 )
 
@@ -30,11 +32,20 @@ type Args struct {
 
 // Exec executes the plugin.
 func Exec(ctx context.Context, args Args) error {
+
 	logrus.Println("tool args.tool ", args.Tool)
+
 	err := StoreResultsToInfluxDb(args)
 	if err != nil {
 		logrus.Println("error: ", err)
 		return err
+	}
+	if args.CompareBuildResults {
+		err = CompareBuildResults(args)
+		if err != nil {
+			logrus.Println("error: ", err)
+			return err
+		}
 	}
 	return nil
 }
@@ -58,5 +69,49 @@ func StoreResultsToInfluxDb(args Args) error {
 			args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket)
 		return aggregator.Aggregate(args.GroupName)
 	}
+	errStr := fmt.Sprintf("Tool type %s not supported to aggregate", args.Tool)
+	return errors.New(errStr)
+}
+
+func CompareBuildResults(args Args) error {
+	var resultStr string
+	var err error
+	diffFileName := BuildResultsDiffCsv
+
+	switch args.Tool {
+	case JacocoTool:
+		resultStr, err = CompareResults(JacocoTool, args)
+	case JunitTool:
+		resultStr, err = CompareJunitResults(JunitTool, args)
+	case NunitTool:
+		resultStr, err = CompareResults(NunitTool, args)
+	case TestNgTool:
+		resultStr, err = CompareResults(TestNgTool, args)
+	default:
+		errStr := fmt.Sprintf("Tool type %s not supported to compare builds", args.Tool)
+		return errors.New(errStr)
+	}
+
+	if err != nil {
+		logrus.Println("Unable to compare results ", err)
+		return err
+	}
+	err = ExportComparisonResults(diffFileName, resultStr, TestResultsDiffFileOutputVar)
+	if err != nil {
+		logrus.Println("Unable to export comparison results ", err)
+		return err
+	}
 	return nil
+}
+
+func ExportComparisonResults(resultFileName, resultStr, outputVarName string) error {
+	err := WriteStrToFile(resultFileName, resultStr)
+	if err != nil {
+		logrus.Println("Unable to write comparison results to file ", err)
+	}
+	err = WriteToEnvVariable(outputVarName, resultFileName)
+	if err != nil {
+		logrus.Println("Unable to write comparison results to env variable ", err)
+	}
+	return err
 }

@@ -6,6 +6,7 @@ package plugin
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
@@ -13,20 +14,26 @@ import (
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/sirupsen/logrus"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
 
 const (
-	JacocoTool        = "jacoco"
-	JunitTool         = "junit"
-	NunitTool         = "nunit"
-	TestNgTool        = "testng"
-	SaveToDb          = "save-to-db"
-	PipeLineIdEnvVar  = "HARNESS_PIPELINE_ID"
-	BuildNumberEnvVar = "HARNESS_BUILD_ID"
+	JacocoTool                   = "jacoco"
+	JunitTool                    = "junit"
+	NunitTool                    = "nunit"
+	TestNgTool                   = "testng"
+	PipeLineIdEnvVar             = "HARNESS_PIPELINE_ID"
+	BuildNumberEnvVar            = "HARNESS_BUILD_ID"
+	TestResultsDataFile          = "TEST_RESULTS_DATA_FILE"
+	TestResultsDiffFileOutputVar = "TEST_RESULTS_DIFF_FILE"
+	BuildResultsDiffCsv          = "build_results_diff.csv"
+	TestResultsDataFileCsv       = "test_results_data.csv"
 )
 
 type ResultBasicInfo struct {
@@ -42,6 +49,33 @@ type DbCredentials struct {
 	InfluxDBToken string
 	Organization  string
 	Bucket        string
+}
+
+type BuildResultCompare struct {
+	Tool               string
+	CurrentPipelineId  string
+	CurrentBuildId     string
+	PreviousPipelineId string
+	PreviousBuildId    string
+}
+
+type ResultDiff struct {
+	FieldName            string  `json:"type"`
+	CurrentBuildValue    float64 `json:"current_build"`
+	PreviousBuildValue   float64 `json:"previous_build"`
+	Difference           float64 `json:"difference"`
+	PercentageDifference float64 `json:"percentage_difference"`
+	IsCompareValid       bool    `json:"-"`
+}
+
+func GetNewBuildResultCompare(tool, currentPipelineId, currentBuildId, previousPipelineId, previousBuildId string) BuildResultCompare {
+	return BuildResultCompare{
+		Tool:               tool,
+		CurrentPipelineId:  currentPipelineId,
+		CurrentBuildId:     currentBuildId,
+		PreviousPipelineId: previousPipelineId,
+		PreviousBuildId:    previousBuildId,
+	}
 }
 
 func GetXmlReportData[T any](reportsRootDir string, patterns []string) ([]T, error) {
@@ -112,8 +146,13 @@ func ParseXmlReport[T any](filename string) T {
 func Aggregate[T any](reportsDir, includes string,
 	dbUrl, dbToken, dbOrg, dbBucket, measurementName, groupName string,
 	calculateAggregate func(testNgAggregatorList []T) T,
-	getDataMaps func(pipelineId, buildNumber string,
-		aggregateData T) (map[string]string, map[string]interface{})) error {
+	getDataMaps func(pipelineId,
+		buildNumber string, aggregateData T) (map[string]string, map[string]interface{}),
+	showBuildStats func(tagsMap map[string]string,
+		fieldsMap map[string]interface{}) error) (map[string]string, map[string]interface{}, error) {
+
+	tagsMap := map[string]string{}
+	fieldsMap := map[string]interface{}{}
 
 	reportsRootDir := reportsDir
 	patterns := strings.Split(includes, ",")
@@ -121,7 +160,7 @@ func Aggregate[T any](reportsDir, includes string,
 	aggregatorList, err := GetXmlReportData[T](reportsRootDir, patterns)
 	if err != nil {
 		logrus.Println("Error getting xml report data: ", err.Error())
-		return err
+		return tagsMap, fieldsMap, err
 	}
 
 	totalAggregate := calculateAggregate(aggregatorList)
@@ -130,20 +169,31 @@ func Aggregate[T any](reportsDir, includes string,
 	pipelineId, buildNumber, err := GetPipelineInfo()
 	if err != nil {
 		logrus.Println("Error getting pipeline info: ", err.Error())
-		return err
+		return tagsMap, fieldsMap, err
 	}
 
-	tagsMap, fieldsMap := getDataMaps(pipelineId, buildNumber, totalAggregate)
-	err = PersistToInfluxDb(dbUrl, dbToken, dbOrg, dbBucket, measurementName, groupName, tagsMap, fieldsMap)
+	tagsMap, fieldsMap = getDataMaps(pipelineId, buildNumber, totalAggregate)
+	err = showBuildStats(tagsMap, fieldsMap)
+	if err != nil {
+		logrus.Println("Error showing build stats: ", err.Error())
+		return tagsMap, fieldsMap, err
+	}
 
-	return err
+	if dbUrl != "" && dbToken != "" && dbOrg != "" && dbBucket != "" {
+		err = PersistToInfluxDb(dbUrl, dbToken, dbOrg, dbBucket, measurementName, groupName, tagsMap, fieldsMap)
+		if err != nil {
+			logrus.Println("Error persisting data to InfluxDB: ", err.Error())
+			return tagsMap, fieldsMap, err
+		}
+	}
+
+	return tagsMap, fieldsMap, err
 }
 
 func PersistToInfluxDb(dbUrl, dbToken, dbOrganisation, dbBucket, measurementName, groupName string,
 	tagsMap map[string]string, fieldsMap map[string]interface{}) error {
 
 	tagsMap["group"] = groupName
-
 	client := influxdb2.NewClient(dbUrl, dbToken)
 	defer client.Close()
 	writeAPI := client.WriteAPIBlocking(dbOrganisation, dbBucket)
@@ -159,6 +209,301 @@ func PersistToInfluxDb(dbUrl, dbToken, dbOrganisation, dbBucket, measurementName
 		return err
 	}
 	logrus.Println("Data persisted successfully to InfluxDB.")
+	return nil
+}
+
+func GetPipelineInfo() (string, string, error) {
+	pipelineId := os.Getenv(PipeLineIdEnvVar)
+	buildNumber := os.Getenv(BuildNumberEnvVar)
+
+	if pipelineId == "" || buildNumber == "" {
+		return "", "", fmt.Errorf("PipelineId or BuildNumber not found in the environment")
+	}
+
+	return pipelineId, buildNumber, nil
+}
+
+func GetPreviousBuildId(measurementName, influxURL, token, org, bucket, currentPipelineId, groupId, currentBuildId string) (prevBuildId int, err error) {
+	client := influxdb2.NewClient(influxURL, token)
+	defer client.Close()
+
+	query := fmt.Sprintf(`
+	from(bucket: "%s")
+	  |> range(start: -1y)
+	  |> filter(fn: (r) => r._measurement == "%s")
+	  |> filter(fn: (r) => r.pipelineId == "%s")
+	  |> filter(fn: (r) => r.group == "%s")
+	  |> keep(columns: ["buildId"])
+	  |> distinct(column: "buildId")
+	  |> sort(columns: ["buildId"], desc: true)
+	`, bucket, measurementName, currentPipelineId, groupId)
+
+	queryAPI := client.QueryAPI(org)
+	result, err := queryAPI.Query(context.Background(), query)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query InfluxDB: %w", err)
+	}
+
+	var buildIds []int
+	for result.Next() {
+		buildIdStr := result.Record().ValueByKey("buildId")
+		if buildIdStr == nil {
+			continue
+		}
+		buildId, convErr := strconv.Atoi(buildIdStr.(string))
+		if convErr != nil {
+			continue
+		}
+		buildIds = append(buildIds, buildId)
+	}
+
+	if len(buildIds) == 0 {
+		fmt.Println("No build IDs found for measurement=", measurementName, "pipelineId=", currentPipelineId, "group=", groupId)
+		return 0, fmt.Errorf("no build IDs found for measurement=%s, pipelineId=%s, group=%s",
+			measurementName, currentPipelineId, groupId)
+	}
+
+	currentBuild, err := strconv.Atoi(currentBuildId)
+	if err != nil {
+		fmt.Println("Invalid currentBuildId: ", currentBuildId)
+		return 0, fmt.Errorf("invalid currentBuildId: %s", currentBuildId)
+	}
+
+	sort.Sort(sort.Reverse(sort.IntSlice(buildIds)))
+	for _, id := range buildIds {
+		if id < currentBuild {
+			return id, nil
+		}
+	}
+
+	return 0, fmt.Errorf("no previous build ID found for %d", currentBuild)
+}
+
+func CompareResults(tool string, args Args) (string, error) {
+	var resultStr string
+	currentPipelineId, currentBuildNumber, err := GetPipelineInfo()
+	if err != nil {
+		fmt.Println("CompareResults Error getting pipeline info: ", err)
+		return resultStr, err
+	}
+
+	previousBuildId, err := GetPreviousBuildId(tool, args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket, currentPipelineId, args.GroupName, currentBuildNumber)
+	if err != nil {
+		fmt.Println("CompareResults Error getting previous build id: ", err)
+		return resultStr, err
+	}
+
+	resultStr, err = GetComparedDifferences(tool, args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket, currentPipelineId, args.GroupName, currentBuildNumber, strconv.Itoa(previousBuildId))
+	if err != nil {
+		fmt.Println("CompareResults Error getting compared differences: ", err)
+		return resultStr, err
+	}
+	return resultStr, nil
+}
+
+func GetComparedDifferences(measurementName, influxURL, token, org, bucket, currentPipelineId, groupId, currentBuildId, previousBuildId string) (string, error) {
+	client := influxdb2.NewClient(influxURL, token)
+	defer client.Close()
+
+	currentValues, err := GetStoredBuildResults(client, org, bucket, measurementName, currentPipelineId, groupId, currentBuildId)
+	if err != nil {
+		fmt.Println("GetComparedDifferences Error fetching current build values: ", err)
+		return "", fmt.Errorf("error fetching current build values: %w", err)
+	}
+
+	previousValues, err := GetStoredBuildResults(client, org, bucket, measurementName, currentPipelineId, groupId, previousBuildId)
+	if err != nil {
+		fmt.Println("GetComparedDifferences Error fetching previous build values: ", err)
+		return "", fmt.Errorf("error fetching previous build values: %w", err)
+	}
+
+	return ComputeBuildResultDifferences(currentValues, previousValues), nil
+}
+
+func GetStoredBuildResults(client influxdb2.Client, org, bucket, measurementName,
+	pipelineId, groupId, buildId string) (map[string]float64, error) {
+
+	query := fmt.Sprintf(`
+	from(bucket: "%s")
+	  |> range(start: -1y)
+	  |> filter(fn: (r) => r._measurement == "%s")
+	  |> filter(fn: (r) => r.pipelineId == "%s")
+	  |> filter(fn: (r) => r.group == "%s")
+	  |> filter(fn: (r) => r.buildId == "%s")
+	  |> keep(columns: ["_field", "_value"])
+	`, bucket, measurementName, pipelineId, groupId, buildId)
+
+	queryAPI := client.QueryAPI(org)
+	result, err := queryAPI.Query(context.Background(), query)
+	if err != nil {
+		fmt.Println("fetchBuildFieldValues Error querying InfluxDB: ", err)
+		return nil, fmt.Errorf("failed to query InfluxDB: %w", err)
+	}
+
+	fieldValues := make(map[string]float64)
+	for result.Next() {
+		fieldName := result.Record().ValueByKey("_field")
+		value := result.Record().ValueByKey("_value")
+
+		if fieldName == nil || value == nil {
+			continue
+		}
+
+		fieldNameStr := fieldName.(string)
+		valueFloat, convErr := strconv.ParseFloat(fmt.Sprintf("%v", value), 64)
+		if convErr != nil {
+			continue
+		}
+
+		fieldValues[fieldNameStr] = valueFloat
+	}
+
+	return fieldValues, nil
+}
+
+func ExportBuildStats(fieldsMap map[string]interface{}) string {
+	resultStr, err := ToJsonStringFromStringMap(fieldsMap)
+	if err != nil {
+		fmt.Println("Error converting fieldsMap to json string: ", err)
+	}
+	err = WriteToEnvVariable("BUILD_RESULTS", resultStr)
+	return resultStr
+}
+
+func ComputeBuildResultDifferences(currentValues, previousValues map[string]float64) string {
+	allFields := make(map[string]struct{})
+
+	for field := range currentValues {
+		allFields[field] = struct{}{}
+	}
+	for field := range previousValues {
+		allFields[field] = struct{}{}
+	}
+
+	var csvBuffer strings.Builder
+	writer := csv.NewWriter(&csvBuffer)
+
+	writer.Write([]string{"Field Name", "Current", "Previous", "Difference", "Percentage Difference"})
+
+	for field := range allFields {
+		currentValue, currentExists := currentValues[field]
+		previousValue, previousExists := previousValues[field]
+
+		if !currentExists {
+			currentValue = 0
+		}
+		if !previousExists {
+			previousValue = 0
+		}
+
+		diff := currentValue - previousValue
+		percentageDiff := 0.0
+		if previousValue != 0 {
+			percentageDiff = (diff / math.Abs(previousValue)) * 100
+		}
+
+		writer.Write([]string{
+			field,
+			fmt.Sprintf("%.2f", currentValue),
+			fmt.Sprintf("%.2f", previousValue),
+			fmt.Sprintf("%.2f", diff),
+			fmt.Sprintf("%.2f%%", percentageDiff),
+		})
+	}
+
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		fmt.Println("Error flushing CSV writer:", err)
+		return ""
+	}
+
+	fmt.Println("")
+	fmt.Println("Comparison results with previous build:")
+	ShowDiffAsTable(currentValues, previousValues)
+	fmt.Println("")
+
+	return csvBuffer.String()
+}
+
+func ShowDiffAsTable(currentValues, previousValues map[string]float64) {
+	allFields := make(map[string]struct{})
+	for key := range currentValues {
+		allFields[key] = struct{}{}
+	}
+	for key := range previousValues {
+		allFields[key] = struct{}{}
+	}
+
+	var sortedFields []string
+	for field := range allFields {
+		sortedFields = append(sortedFields, field)
+	}
+	sort.Strings(sortedFields)
+
+	maxFieldLen := len("Result Type")
+	maxValueLen := len("Current Build")
+	maxDiffLen := len("Difference")
+	maxPercentDiffLen := len("Percentage Difference")
+
+	for _, field := range sortedFields {
+		fieldLen := len(field)
+		if fieldLen > maxFieldLen {
+			maxFieldLen = fieldLen
+		}
+
+		currentValStr := fmt.Sprintf("%d", int(currentValues[field]))
+		//previousValStr := fmt.Sprintf("%d", int(previousValues[field]))
+		diffStr := fmt.Sprintf("%d", int(currentValues[field]-previousValues[field]))
+		percentageDiffStr := fmt.Sprintf("%.2f%%", computePercentageDiff(currentValues[field], previousValues[field]))
+
+		maxValueLen = max(maxValueLen, len(currentValStr)) //, len(previousValStr))
+		maxDiffLen = max(maxDiffLen, len(diffStr))
+		maxPercentDiffLen = max(maxPercentDiffLen, len(percentageDiffStr))
+	}
+
+	headerFormat := fmt.Sprintf("| %%-%ds | %%-%ds | %%-%ds | %%-%ds | %%-%ds |\n",
+		maxFieldLen, maxValueLen, maxValueLen, maxDiffLen, maxPercentDiffLen)
+	rowFormat := fmt.Sprintf("| %%-%ds | %%-%dd | %%-%dd | %%-%dd | %%-%ds |\n",
+		maxFieldLen, maxValueLen, maxValueLen, maxDiffLen, maxPercentDiffLen)
+
+	fmt.Println(strings.Repeat("-", maxFieldLen+maxValueLen*2+maxDiffLen+maxPercentDiffLen+14))
+	fmt.Printf(headerFormat, "Result Type", "Current Build", "Previous Build", "Difference", "Percentage Difference")
+	fmt.Println(strings.Repeat("-", maxFieldLen+maxValueLen*2+maxDiffLen+maxPercentDiffLen+14))
+
+	for _, field := range sortedFields {
+		currentVal := int(currentValues[field])
+		previousVal := int(previousValues[field])
+		diff := currentVal - previousVal
+		percentageDiff := computePercentageDiff(currentValues[field], previousValues[field])
+
+		fmt.Printf(rowFormat, field, currentVal, previousVal, diff, fmt.Sprintf("%.2f%%", percentageDiff))
+	}
+
+	fmt.Println(strings.Repeat("-", maxFieldLen+maxValueLen*2+maxDiffLen+maxPercentDiffLen+14))
+}
+
+func computePercentageDiff(currentVal, previousVal float64) float64 {
+	if previousVal == 0 {
+		return 0.0
+	}
+	return (currentVal - previousVal) / math.Abs(previousVal) * 100
+}
+
+func WriteToEnvVariable(key string, value interface{}) error {
+
+	outputFile, err := os.OpenFile(os.Getenv("DRONE_OUTPUT"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open output file: %w", err)
+	}
+	defer outputFile.Close()
+
+	valueStr := fmt.Sprintf("%v", value)
+
+	_, err = fmt.Fprintf(outputFile, "%s=%s\n", key, valueStr)
+	if err != nil {
+		return fmt.Errorf("failed to write to env: %w", err)
+	}
+
 	return nil
 }
 
@@ -178,13 +523,25 @@ func ToJsonStringFromStruct[T any](v T) (string, error) {
 	return "", err
 }
 
-func GetPipelineInfo() (string, string, error) {
-	pipelineId := os.Getenv(PipeLineIdEnvVar)
-	buildNumber := os.Getenv(BuildNumberEnvVar)
+func ToJsonStringFromStringMap(m map[string]interface{}) (string, error) {
+	outBytes, err := json.Marshal(m)
+	if err == nil {
+		return string(outBytes), nil
+	}
+	return "", err
+}
 
-	if pipelineId == "" || buildNumber == "" {
-		return "", "", fmt.Errorf("PipelineId or BuildNumber not found in the environment")
+func WriteStrToFile(filePath, data string) error {
+	file, err := os.Create(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = file.WriteString(data)
+	if err != nil {
+		return err
 	}
 
-	return pipelineId, buildNumber, nil
+	return nil
 }
