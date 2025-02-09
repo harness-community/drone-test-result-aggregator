@@ -21,8 +21,10 @@ docker build -t plugins/test-result-aggregator  -f docker/Dockerfile .
 ```
 
 ##  Aggregate Nunit test results
-This step aggregates Nunit test results, stores in influx DB, compares results and helps understand trends. <br>
-Test results comparison with previous builds can be done using compare_build_results boolean flag. <br>
+- This step aggregates Nunit test results, stores them in InfluxDB, compares results, and helps understand trends.
+- Test results comparison with previous builds can be done using the `compare_build_results` boolean flag.
+- When InfluxDB parameters are provided, the plugin will store the test results in InfluxDB. Otherwise, this step is skipped.
+- When `compare_build_results` is set to `true`, the plugin will compare the current build results with the previous build results.
 
 ### Sample for Aggregate Nunit test results step
 ```yaml
@@ -63,6 +65,42 @@ Test results comparison with previous builds can be done using compare_build_res
 | 12           | nunit        | timeout               | 0      | 2024-02-05T09:35:27.620Z    | 2025-02-04T15:35:27.620Z    | 2025-02-04T14:55:57.279Z    | 54      | suite_01 | testresultaggregator |
 | 13           | nunit        | total                 | 6      | 2024-02-05T09:35:27.620Z    | 2025-02-04T15:35:27.620Z    | 2025-02-04T14:55:57.279Z    | 54      | suite_01 | testresultaggregator |
 | 14           | nunit        | warning               | 0      | 2024-02-05T09:35:27.620Z    | 2025-02-04T15:35:27.620Z    | 2025-02-04T14:55:57.279Z    | 54      | suite_01 | testresultaggregator |
+
+### Test result output as shown in Harness UI
+```txt
+==================================
+  NUnit Test Run Summary
+==================================
+ Pipeline ID : testresultaggregatorsenthil03linux      
+ Build ID : 88                                      
+==================================
+| Test Category    | Count      |
+----------------------------------
+| 📁 Total Cases   |         22 |
+| ✅ Total Passed  |         21 |
+| ❌ Total Failed  |          1 |
+| ⏸️ Total Skipped |          0 |
+==================================
+```
+
+### Test results comparison with previous builds as shown in Harness UI
+```txt
+Comparison results with previous build:
+------------------------------------------------------------------------------------
+| Result Type   | Current Build | Previous Build | Difference | Percentage Difference |
+------------------------------------------------------------------------------------
+| total_cases   | 22            | 22            | 0          | 0.00%                 |
+| total_failed  | 1             | 1             | 0          | 0.00%                 |
+| total_passed  | 21            | 21            | 0          | 0.00%                 |
+| total_skipped | 0             | 0             | 0          | 0.00%                 |
+------------------------------------------------------------------------------------
+```
+
+### Exported Environment Variables
+| Metric                   | Description |
+|--------------------------|-------------|
+| **TEST_RESULTS_DATA_FILE** | Contains raw test result metrics, including coverage breakdown and execution data. |
+| **TEST_RESULTS_DIFF_FILE** | Stores the differences in test results between builds, helping track regressions and improvements. |
 
 
 ## Community and Support

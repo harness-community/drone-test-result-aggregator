@@ -254,7 +254,7 @@ func ShowTestNgStats(tagsMap map[string]string, fieldsMap map[string]interface{}
 
 	table := []string{
 		border,
-		"  🧪 TestNG Test Run Summary",
+		"  TestNG Test Run Summary",
 		border,
 		fmt.Sprintf("  Pipeline ID      : %-40s", tagsMap["pipelineId"]),
 		fmt.Sprintf("  Build ID         : %-40s", tagsMap["buildId"]),

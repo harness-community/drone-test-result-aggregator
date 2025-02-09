@@ -21,8 +21,10 @@ docker build -t plugins/test-result-aggregator  -f docker/Dockerfile .
 ```
 
 ##  Aggregate Testng test results
-This step aggregates Testng test results, stores in influx DB, compares results and helps understand trends. <br>
-Test results comparison with previous builds can be done using compare_build_results boolean flag.<br>
+- This step aggregates Testng test results, stores them in InfluxDB, compares results, and helps understand trends.
+- Test results comparison with previous builds can be done using the `compare_build_results` boolean flag.
+- When InfluxDB parameters are provided, the plugin will store the test results in InfluxDB. Otherwise, this step is skipped.
+- When `compare_build_results` is set to `true`, the plugin will compare the current build results with the previous build results.
 
 ### Aggregate Testng test results, store in influx DB, compare results and understand trends
 ```yaml
@@ -52,6 +54,43 @@ Test results comparison with previous builds can be done using compare_build_res
 | 2       | testng      | passed  | 6      | 2024-02-05T09:47:49.064Z    | 2025-02-04T15:47:49.064Z    | 2025-02-04T14:56:19.591Z    | 54      | suite_01 | testresultaggregator   |
 | 3       | testng      | skipped | 2      | 2024-02-05T09:47:49.064Z    | 2025-02-04T15:47:49.064Z    | 2025-02-04T14:56:19.591Z    | 54      | suite_01 | testresultaggregator   |
 | 4       | testng      | total   | 10     | 2024-02-05T09:47:49.064Z    | 2025-02-04T15:47:49.064Z    | 2025-02-04T14:56:19.591Z    | 54      | suite_01 | testresultaggregator   |
+
+### Test result output as shown in Harness UI
+```txt
+===================================================================
+  TestNG Test Run Summary
+===================================================================
+  Pipeline ID      : testresultaggregatorsenthil03linux      
+  Build ID         : 88                                      
+===================================================================
+| Test Category          | Count      |
+-------------------------------------------------------------------
+| 📁 Total Cases     |         14    |
+| ❌ Total Failed     |          4    |
+| ⏸️ Total Skipped   |          4    |
+| ⏱️ Total Duration  |      50.00 ms |
+===================================================================
+
+```
+
+### Test results comparison with previous builds as shown in Harness UI
+```txt
+Comparison results with previous build:
+------------------------------------------------------------------------------------
+| Result Type   | Current Build | Previous Build | Difference | Percentage Difference |
+------------------------------------------------------------------------------------
+| duration_ms   | 50            | 50            | 0          | 0.00%                 |
+| total_cases   | 14            | 14            | 0          | 0.00%                 |
+| total_failed  | 4             | 4             | 0          | 0.00%                 |
+| total_skipped | 4             | 4             | 0          | 0.00%                 |
+------------------------------------------------------------------------------------
+```
+
+### Exported Environment Variables
+| Metric                   | Description |
+|--------------------------|-------------|
+| **TEST_RESULTS_DATA_FILE** | Contains raw test result metrics, including coverage breakdown and execution data. |
+| **TEST_RESULTS_DIFF_FILE** | Stores the differences in test results between builds, helping track regressions and improvements. |
 
 
 ## Community and Support
