@@ -179,7 +179,13 @@ func Aggregate[T any](reportsDir, includes string,
 		return tagsMap, fieldsMap, err
 	}
 
-	err = PersistToInfluxDb(dbUrl, dbToken, dbOrg, dbBucket, measurementName, groupName, tagsMap, fieldsMap)
+	if dbUrl != "" && dbToken != "" && dbOrg != "" && dbBucket != "" {
+		err = PersistToInfluxDb(dbUrl, dbToken, dbOrg, dbBucket, measurementName, groupName, tagsMap, fieldsMap)
+		if err != nil {
+			logrus.Println("Error persisting data to InfluxDB: ", err.Error())
+			return tagsMap, fieldsMap, err
+		}
+	}
 
 	return tagsMap, fieldsMap, err
 }

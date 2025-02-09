@@ -97,9 +97,15 @@ func (j *JunitAggregator) Aggregate(groupName string) error {
 		logrus.Println("Error writing Junit metrics to CSV: ", err.Error())
 	}
 
-	err = PersistToInfluxDb(j.DbCredentials.InfluxDBURL,
-		j.DbCredentials.InfluxDBToken, j.DbCredentials.Organization, j.DbCredentials.Bucket,
-		JunitTool, groupName, tagsMap, fieldsMap)
+	if j.DbCredentials.InfluxDBURL != "" && j.DbCredentials.InfluxDBToken != "" &&
+		j.DbCredentials.Organization != "" && j.DbCredentials.Bucket != "" {
+		err = PersistToInfluxDb(j.DbCredentials.InfluxDBURL, j.DbCredentials.InfluxDBToken,
+			j.DbCredentials.Organization, j.DbCredentials.Bucket, JunitTool, groupName, tagsMap, fieldsMap)
+		if err != nil {
+			logrus.Println("Error persisting data to InfluxDB: ", err.Error())
+			return err
+		}
+	}
 
 	return err
 }
