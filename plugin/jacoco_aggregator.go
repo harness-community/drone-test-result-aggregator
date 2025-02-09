@@ -138,14 +138,24 @@ func WriteJacocoMetricsCsvData(csvFileName string, tagsMap map[string]string, fi
 	classCoveragePercentage := CalculatePercentage(int(fieldsMap["class_total_sum"].(float64)),
 		int(fieldsMap["class_missed_sum"].(float64)))
 
+	//coverageData := [][]string{
+	//	{"Metric", "Percentage"},
+	//	{"INSTRUCTION_COVERAGE", fmt.Sprintf("%.2f%%", instructionCoveragePercentage)},
+	//	{"BRANCH_COVERAGE", fmt.Sprintf("%.2f%%", branchCoveragePercentage)},
+	//	{"LINE_COVERAGE", fmt.Sprintf("%.2f%%", lineCoveragePercentage)},
+	//	{"COMPLEXITY_COVERAGE", fmt.Sprintf("%.2f%%", complexityCoverage)},
+	//	{"METHOD_COVERAGE", fmt.Sprintf("%.2f%%", methodCoveragePercentage)},
+	//	{"CLASS_COVERAGE", fmt.Sprintf("%.2f%%", classCoveragePercentage)},
+	//}
+
 	coverageData := [][]string{
 		{"Metric", "Percentage"},
-		{"INSTRUCTION_COVERAGE", fmt.Sprintf("%.2f%%", instructionCoveragePercentage)},
-		{"BRANCH_COVERAGE", fmt.Sprintf("%.2f%%", branchCoveragePercentage)},
-		{"LINE_COVERAGE", fmt.Sprintf("%.2f%%", lineCoveragePercentage)},
-		{"COMPLEXITY_COVERAGE", fmt.Sprintf("%.2f%%", complexityCoverage)},
-		{"METHOD_COVERAGE", fmt.Sprintf("%.2f%%", methodCoveragePercentage)},
-		{"CLASS_COVERAGE", fmt.Sprintf("%.2f%%", classCoveragePercentage)},
+		{"INSTRUCTION_COVERAGE", fmt.Sprintf("%.2f%%", float64(instructionCoveragePercentage))},
+		{"BRANCH_COVERAGE", fmt.Sprintf("%.2f%%", float64(branchCoveragePercentage))},
+		{"LINE_COVERAGE", fmt.Sprintf("%.2f%%", float64(lineCoveragePercentage))},
+		{"COMPLEXITY_COVERAGE", fmt.Sprintf("%.2f%%", float64(complexityCoverage))},
+		{"METHOD_COVERAGE", fmt.Sprintf("%.2f%%", float64(methodCoveragePercentage))},
+		{"CLASS_COVERAGE", fmt.Sprintf("%.2f%%", float64(classCoveragePercentage))},
 	}
 
 	file, err := os.Create(csvFileName)
@@ -173,7 +183,7 @@ func WriteJacocoMetricsCsvData(csvFileName string, tagsMap map[string]string, fi
 	if err := writer.Error(); err != nil {
 		return fmt.Errorf("error flushing CSV writer to file: %w", err)
 	}
-	
+
 	err = WriteToEnvVariable(TestResultsDataFile, csvFileName)
 	if err != nil {
 		logrus.Errorf("Error writing CSV file path to env variable: %v", err)
@@ -259,13 +269,21 @@ func addToSum(totalSum *float64, coveredSum *float64, missedSum *float64,
 	*missedSum += missed
 }
 
-func CalculatePercentage(covered, missed int) string {
+//func CalculatePercentage(covered, missed int) string {
+//	total := covered + missed
+//	if total == 0 {
+//		return "0%(0/0)"
+//	}
+//	percentage := (float64(covered) / float64(total)) * 100
+//	return fmt.Sprintf("%.2f%%(%d/%d)", percentage, covered, total)
+//}
+
+func CalculatePercentage(covered, missed int) float64 {
 	total := covered + missed
 	if total == 0 {
-		return "0%(0/0)"
+		return 0.0
 	}
-	percentage := (float64(covered) / float64(total)) * 100
-	return fmt.Sprintf("%.2f%%(%d/%d)", percentage, covered, total)
+	return (float64(covered) / float64(total)) * 100
 }
 
 func ShowJacocoStats(tags map[string]string, fields map[string]interface{}) error {

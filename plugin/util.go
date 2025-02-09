@@ -28,13 +28,10 @@ const (
 	JunitTool                    = "junit"
 	NunitTool                    = "nunit"
 	TestNgTool                   = "testng"
-	SaveToDb                     = "save-to-db"
 	PipeLineIdEnvVar             = "HARNESS_PIPELINE_ID"
 	BuildNumberEnvVar            = "HARNESS_BUILD_ID"
-	TestResultsData              = "TEST_RESULTS_DATA"
 	TestResultsDataFile          = "TEST_RESULTS_DATA_FILE"
 	TestResultsDiffFileOutputVar = "TEST_RESULTS_DIFF_FILE"
-	TestResultsDiffData          = "TEST_RESULTS_DIFF_DATA"
 	BuildResultsDiffCsv          = "build_results_diff.csv"
 	TestResultsDataFileCsv       = "test_results_data.csv"
 )
@@ -150,9 +147,9 @@ func Aggregate[T any](reportsDir, includes string,
 	dbUrl, dbToken, dbOrg, dbBucket, measurementName, groupName string,
 	calculateAggregate func(testNgAggregatorList []T) T,
 	getDataMaps func(pipelineId,
-	buildNumber string, aggregateData T) (map[string]string, map[string]interface{}),
+		buildNumber string, aggregateData T) (map[string]string, map[string]interface{}),
 	showBuildStats func(tagsMap map[string]string,
-	fieldsMap map[string]interface{}) error) (map[string]string, map[string]interface{}, error) {
+		fieldsMap map[string]interface{}) error) (map[string]string, map[string]interface{}, error) {
 
 	tagsMap := map[string]string{}
 	fieldsMap := map[string]interface{}{}
@@ -449,11 +446,11 @@ func ShowDiffAsTable(currentValues, previousValues map[string]float64) {
 		}
 
 		currentValStr := fmt.Sprintf("%d", int(currentValues[field]))
-		previousValStr := fmt.Sprintf("%d", int(previousValues[field]))
+		//previousValStr := fmt.Sprintf("%d", int(previousValues[field]))
 		diffStr := fmt.Sprintf("%d", int(currentValues[field]-previousValues[field]))
 		percentageDiffStr := fmt.Sprintf("%.2f%%", computePercentageDiff(currentValues[field], previousValues[field]))
 
-		maxValueLen = max(maxValueLen, len(currentValStr), len(previousValStr))
+		maxValueLen = max(maxValueLen, len(currentValStr)) //, len(previousValStr))
 		maxDiffLen = max(maxDiffLen, len(diffStr))
 		maxPercentDiffLen = max(maxPercentDiffLen, len(percentageDiffStr))
 	}
