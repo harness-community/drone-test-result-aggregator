@@ -145,9 +145,9 @@ func Aggregate[T any](reportsDir, includes string,
 	dbUrl, dbToken, dbOrg, dbBucket, measurementName, groupName string,
 	calculateAggregate func(testNgAggregatorList []T) T,
 	getDataMaps func(pipelineId,
-		buildNumber string, aggregateData T) (map[string]string, map[string]interface{}),
+	buildNumber string, aggregateData T) (map[string]string, map[string]interface{}),
 	showBuildStats func(tagsMap map[string]string,
-		fieldsMap map[string]interface{}) error) (map[string]string, map[string]interface{}, error) {
+	fieldsMap map[string]interface{}) error) (map[string]string, map[string]interface{}, error) {
 
 	tagsMap := map[string]string{}
 	fieldsMap := map[string]interface{}{}
@@ -222,7 +222,18 @@ func GetPipelineInfo() (string, string, error) {
 }
 
 func GetPreviousBuildId(measurementName, influxURL, token, org, bucket,
-	currentPipelineId, groupId, currentBuildId string) (int, error) {
+	currentPipelineId, groupId, currentBuildId string, args Args) (int, error) {
+
+	if args.CompareBuildId != "" {
+		prevBuildId, convErr := strconv.Atoi(args.CompareBuildId)
+		if convErr != nil {
+			logrus.Println("Error converting previous build ID ", args.CompareBuildId, " to int: ", convErr)
+			return 0, fmt.Errorf("error converting previous build ID to int: %w", convErr)
+		}
+		fmt.Println("Comparing against build ID: ", prevBuildId)
+		return prevBuildId, nil
+	}
+
 	client := influxdb2.NewClient(influxURL, token)
 	defer client.Close()
 
@@ -288,7 +299,7 @@ func CompareResults(tool string, args Args) (string, error) {
 		return resultStr, err
 	}
 
-	previousBuildId, err := GetPreviousBuildId(tool, args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket, currentPipelineId, args.GroupName, currentBuildNumber)
+	previousBuildId, err := GetPreviousBuildId(tool, args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket, currentPipelineId, args.GroupName, currentBuildNumber, args)
 	if err != nil {
 		fmt.Println("CompareResults Error getting previous build id: ", err)
 		return resultStr, err

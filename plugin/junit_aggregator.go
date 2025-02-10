@@ -178,7 +178,7 @@ func CompareJunitResults(tool string, args Args) (string, error) {
 		return resultStr, err
 	}
 
-	previousBuildId, err := GetPreviousBuildId(tool, args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket, currentPipelineId, args.GroupName, currentBuildNumber)
+	previousBuildId, err := GetPreviousBuildId(tool, args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket, currentPipelineId, args.GroupName, currentBuildNumber, args)
 	if err != nil {
 		fmt.Println("CompareResults Error getting previous build id: ", err)
 		return resultStr, err
