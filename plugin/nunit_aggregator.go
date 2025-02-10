@@ -1,10 +1,8 @@
 package plugin
 
 import (
-	"encoding/csv"
 	"fmt"
 	"github.com/sirupsen/logrus"
-	"os"
 	"strings"
 )
 
@@ -49,9 +47,9 @@ func (n *NunitAggregator) Aggregate(groupName string) error {
 		return fmt.Errorf("failed to aggregate NUnit test results: %w", err)
 	}
 
-	err = WriteNunitMetricsCsvData(TestResultsDataFileCsv, tagsMap, fieldsMap)
+	err = ExportNunitOutputVars(tagsMap, fieldsMap)
 	if err != nil {
-		logrus.Errorf("Error writing NUnit metrics to CSV file: %v", err)
+		logrus.Println("Error exporting Nunit output variables", err)
 		return err
 	}
 	return nil
@@ -99,7 +97,23 @@ func GetNunitDataMaps(pipelineId, buildNumber string, aggregateData TestRunSumma
 	return tags, fields
 }
 
-// ShowNunitStats displays NUnit test summary in a well-formatted table.
+func ExportNunitOutputVars(tags map[string]string, fields map[string]interface{}) error {
+	outputVarsMap := map[string]interface{}{
+		"TOTAL_CASES":   fields["total_cases"],
+		"TOTAL_PASSED":  fields["total_passed"],
+		"TOTAL_FAILED":  fields["total_failed"],
+		"TOTAL_SKIPPED": fields["total_skipped"],
+	}
+	for key, value := range outputVarsMap {
+		err := WriteToEnvVariable(key, fmt.Sprintf("%v", value))
+		if err != nil {
+			logrus.Errorf("Error writing %s to env variable: %v", key, err)
+			return err
+		}
+	}
+	return nil
+}
+
 func ShowNunitStats(tags map[string]string, fields map[string]interface{}) error {
 	border := "=================================="
 	separator := "----------------------------------"
@@ -121,57 +135,5 @@ func ShowNunitStats(tags map[string]string, fields map[string]interface{}) error
 	}
 
 	fmt.Println(strings.Join(table, "\n"))
-	return nil
-}
-
-func WriteNunitMetricsCsvData(csvFileName string, tagsMap map[string]string, fieldsMap map[string]interface{}) error {
-	file, err := os.Create(csvFileName)
-	if err != nil {
-		return fmt.Errorf("failed to create CSV file: %w", err)
-	}
-	defer file.Close()
-
-	writer := csv.NewWriter(file)
-	var csvBuffer strings.Builder
-	bufferWriter := csv.NewWriter(&csvBuffer)
-
-	header := []string{"Pipeline ID", "Build ID", "Test Category", "Count"}
-	if err := writer.Write(header); err != nil {
-		return fmt.Errorf("failed to write CSV header to file: %w", err)
-	}
-	if err := bufferWriter.Write(header); err != nil {
-		return fmt.Errorf("failed to write CSV header to buffer: %w", err)
-	}
-
-	nunitData := [][]string{
-		{tagsMap["pipelineId"], tagsMap["buildId"], "Total Cases", fmt.Sprintf("%d", fieldsMap["total_cases"].(int))},
-		{tagsMap["pipelineId"], tagsMap["buildId"], "Total Passed", fmt.Sprintf("%d", fieldsMap["total_passed"].(int))},
-		{tagsMap["pipelineId"], tagsMap["buildId"], "Total Failed", fmt.Sprintf("%d", fieldsMap["total_failed"].(int))},
-		{tagsMap["pipelineId"], tagsMap["buildId"], "Total Skipped", fmt.Sprintf("%d", fieldsMap["total_skipped"].(int))},
-	}
-
-	for _, row := range nunitData {
-		if err := writer.Write(row); err != nil {
-			return fmt.Errorf("failed to write CSV row to file: %w", err)
-		}
-		if err := bufferWriter.Write(row); err != nil {
-			return fmt.Errorf("failed to write CSV row to buffer: %w", err)
-		}
-	}
-
-	writer.Flush()
-	bufferWriter.Flush()
-
-	if err := writer.Error(); err != nil {
-		return fmt.Errorf("error flushing CSV writer to file: %w", err)
-	}
-
-	err = WriteToEnvVariable(TestResultsDataFile, csvFileName)
-	if err != nil {
-		logrus.Errorf("Error writing CSV file path to env variable: %v", err)
-		return err
-	}
-
-	logrus.Infof("NUnit test metrics exported to %s and stored in NUNIT_METRICS_CSV_FILE env variable", csvFileName)
 	return nil
 }

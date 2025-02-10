@@ -30,10 +30,8 @@ const (
 	TestNgTool                   = "testng"
 	PipeLineIdEnvVar             = "HARNESS_PIPELINE_ID"
 	BuildNumberEnvVar            = "HARNESS_BUILD_ID"
-	TestResultsDataFile          = "TEST_RESULTS_DATA_FILE"
 	TestResultsDiffFileOutputVar = "TEST_RESULTS_DIFF_FILE"
 	BuildResultsDiffCsv          = "build_results_diff.csv"
-	TestResultsDataFileCsv       = "test_results_data.csv"
 )
 
 type ResultBasicInfo struct {
@@ -223,60 +221,63 @@ func GetPipelineInfo() (string, string, error) {
 	return pipelineId, buildNumber, nil
 }
 
-func GetPreviousBuildId(measurementName, influxURL, token, org, bucket, currentPipelineId, groupId, currentBuildId string) (prevBuildId int, err error) {
+func GetPreviousBuildId(measurementName, influxURL, token, org, bucket,
+	currentPipelineId, groupId, currentBuildId string) (int, error) {
 	client := influxdb2.NewClient(influxURL, token)
 	defer client.Close()
 
 	query := fmt.Sprintf(`
 	from(bucket: "%s")
 	  |> range(start: -1y)
-	  |> filter(fn: (r) => r._measurement == "%s")
-	  |> filter(fn: (r) => r.pipelineId == "%s")
-	  |> filter(fn: (r) => r.group == "%s")
-	  |> keep(columns: ["buildId"])
-	  |> distinct(column: "buildId")
+	  |> filter(fn: (r) => r._measurement == "%s" and r.pipelineId == "%s" and r.group == "%s")
+	  |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
 	  |> sort(columns: ["buildId"], desc: true)
 	`, bucket, measurementName, currentPipelineId, groupId)
 
 	queryAPI := client.QueryAPI(org)
 	result, err := queryAPI.Query(context.Background(), query)
 	if err != nil {
+		logrus.Println("Error querying InfluxDB: ", err)
 		return 0, fmt.Errorf("failed to query InfluxDB: %w", err)
 	}
 
-	var buildIds []int
+	currentBuild, err := strconv.Atoi(currentBuildId)
+	if err != nil {
+		logrus.Println("Invalid currentBuildId: ", currentBuildId)
+		return 0, fmt.Errorf("invalid currentBuildId: %s", currentBuildId)
+	}
+
+	var prevBuildId = 0
+	var buildId int
+	found := false
+	var convErr error
+
 	for result.Next() {
 		buildIdStr := result.Record().ValueByKey("buildId")
 		if buildIdStr == nil {
 			continue
 		}
-		buildId, convErr := strconv.Atoi(buildIdStr.(string))
+
+		prevBuildId = buildId
+		buildId, convErr = strconv.Atoi(buildIdStr.(string))
 		if convErr != nil {
+			logrus.Println("Error converting buildId ", buildIdStr, "to int error: ", convErr)
 			continue
 		}
-		buildIds = append(buildIds, buildId)
-	}
 
-	if len(buildIds) == 0 {
-		fmt.Println("No build IDs found for measurement=", measurementName, "pipelineId=", currentPipelineId, "group=", groupId)
-		return 0, fmt.Errorf("no build IDs found for measurement=%s, pipelineId=%s, group=%s",
-			measurementName, currentPipelineId, groupId)
-	}
-
-	currentBuild, err := strconv.Atoi(currentBuildId)
-	if err != nil {
-		fmt.Println("Invalid currentBuildId: ", currentBuildId)
-		return 0, fmt.Errorf("invalid currentBuildId: %s", currentBuildId)
-	}
-
-	sort.Sort(sort.Reverse(sort.IntSlice(buildIds)))
-	for _, id := range buildIds {
-		if id < currentBuild {
-			return id, nil
+		if buildId >= currentBuild {
+			found = true
+			break
 		}
 	}
 
-	return 0, fmt.Errorf("no previous build ID found for %d", currentBuild)
+	if !found {
+		logrus.Println("No previous build ID found for ", currentBuild)
+		return 0, fmt.Errorf("no previous build ID found for %d", currentBuild)
+	}
+
+	fmt.Println("Previous build ID found: ", prevBuildId)
+	return prevBuildId, nil
 }
 
 func CompareResults(tool string, args Args) (string, error) {
@@ -317,7 +318,12 @@ func GetComparedDifferences(measurementName, influxURL, token, org, bucket, curr
 		return "", fmt.Errorf("error fetching previous build values: %w", err)
 	}
 
-	return ComputeBuildResultDifferences(currentValues, previousValues), nil
+	diffStr, err := ComputeBuildResultDifferences(currentValues, previousValues)
+	if err != nil {
+		fmt.Println("GetComparedDifferences Error computing differences: ", err)
+		return "", err
+	}
+	return diffStr, nil
 }
 
 func GetStoredBuildResults(client influxdb2.Client, org, bucket, measurementName,
@@ -361,16 +367,7 @@ func GetStoredBuildResults(client influxdb2.Client, org, bucket, measurementName
 	return fieldValues, nil
 }
 
-func ExportBuildStats(fieldsMap map[string]interface{}) string {
-	resultStr, err := ToJsonStringFromStringMap(fieldsMap)
-	if err != nil {
-		fmt.Println("Error converting fieldsMap to json string: ", err)
-	}
-	err = WriteToEnvVariable("BUILD_RESULTS", resultStr)
-	return resultStr
-}
-
-func ComputeBuildResultDifferences(currentValues, previousValues map[string]float64) string {
+func ComputeBuildResultDifferences(currentValues, previousValues map[string]float64) (string, error) {
 	allFields := make(map[string]struct{})
 
 	for field := range currentValues {
@@ -383,7 +380,11 @@ func ComputeBuildResultDifferences(currentValues, previousValues map[string]floa
 	var csvBuffer strings.Builder
 	writer := csv.NewWriter(&csvBuffer)
 
-	writer.Write([]string{"Field Name", "Current", "Previous", "Difference", "Percentage Difference"})
+	err := writer.Write([]string{"Field Name", "Current", "Previous", "Difference", "Percentage Difference"})
+	if err != nil {
+		logrus.Println("Error writing to CSV writer: ", err)
+		return "", err
+	}
 
 	for field := range allFields {
 		currentValue, currentExists := currentValues[field]
@@ -402,19 +403,23 @@ func ComputeBuildResultDifferences(currentValues, previousValues map[string]floa
 			percentageDiff = (diff / math.Abs(previousValue)) * 100
 		}
 
-		writer.Write([]string{
+		err = writer.Write([]string{
 			field,
 			fmt.Sprintf("%.2f", currentValue),
 			fmt.Sprintf("%.2f", previousValue),
 			fmt.Sprintf("%.2f", diff),
 			fmt.Sprintf("%.2f%%", percentageDiff),
 		})
+		if err != nil {
+			logrus.Println("Error writing to CSV writer: ", err)
+			return "", err
+		}
 	}
 
 	writer.Flush()
 	if err := writer.Error(); err != nil {
 		fmt.Println("Error flushing CSV writer:", err)
-		return ""
+		return "", err
 	}
 
 	fmt.Println("")
@@ -422,7 +427,7 @@ func ComputeBuildResultDifferences(currentValues, previousValues map[string]floa
 	ShowDiffAsTable(currentValues, previousValues)
 	fmt.Println("")
 
-	return csvBuffer.String()
+	return csvBuffer.String(), nil
 }
 
 func ShowDiffAsTable(currentValues, previousValues map[string]float64) {
