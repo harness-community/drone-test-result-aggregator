@@ -1,9 +1,11 @@
 package plugin
 
 import (
+	"bytes"
 	"encoding/csv"
 	"encoding/xml"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 )
@@ -205,4 +207,50 @@ func TestComputeJJunitBuildResultDifferences(t *testing.T) {
 	if !strings.Contains(resultStr, "ResultType,CurrentBuild,PreviousBuild,Difference,PercentageDifference") {
 		t.Errorf("Expected header not found in result: %q", resultStr)
 	}
+}
+
+func TestShowJunitStats(t *testing.T) {
+	tags := map[string]string{
+		"pipelineId": "pipeline_123",
+		"buildId":    "build_456",
+	}
+
+	fields := map[string]interface{}{
+		"total_tests":   50,
+		"passed_tests":  40,
+		"failed_tests":  5,
+		"skipped_tests": 3,
+		"errors_count":  2,
+	}
+
+	var output bytes.Buffer
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := ShowJunitStats(tags, fields)
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	_, _ = output.ReadFrom(r)
+
+	if err != nil {
+		t.Errorf("Expected no error, got: %v", err)
+	}
+
+	expectedChecks := []string{
+		"Total Cases", "50.00",
+		"Total Passed", "40.00",
+		"Total Failed", "5.00",
+		"Total Skipped", "3.00",
+		"Total Errors", "2.00",
+	}
+
+	for i := 0; i < len(expectedChecks); i += 2 {
+		if !strings.Contains(output.String(), expectedChecks[i]) || !strings.Contains(output.String(), expectedChecks[i+1]) {
+			t.Errorf("Expected output to contain both '%s' and '%s', but got:\n%s", expectedChecks[i], expectedChecks[i+1], output.String())
+		}
+	}
+
 }
