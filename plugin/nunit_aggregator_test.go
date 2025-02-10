@@ -1,8 +1,10 @@
 package plugin
 
 import (
+	"bytes"
 	"encoding/xml"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 )
@@ -161,4 +163,100 @@ func MockComputeNunitBuildResultDifferences(currentValues, previousValues map[st
 	}
 
 	return csvBuffer.String()
+}
+
+func TestCalculateNunitAggregate(t *testing.T) {
+	reports := []TestRunSummary{
+		{TotalCases: 5, TotalPassed: 3, TotalFailed: 1, TotalSkipped: 1},
+		{TotalCases: 8, TotalPassed: 6, TotalFailed: 2, TotalSkipped: 0},
+	}
+
+	result := CalculateNunitAggregate(reports)
+
+	if result.TotalCases != 13 {
+		t.Errorf("Expected TotalCases = 13, got %d", result.TotalCases)
+	}
+	if result.TotalPassed != 9 {
+		t.Errorf("Expected TotalPassed = 9, got %d", result.TotalPassed)
+	}
+	if result.TotalFailed != 3 {
+		t.Errorf("Expected TotalFailed = 3, got %d", result.TotalFailed)
+	}
+	if result.TotalSkipped != 1 {
+		t.Errorf("Expected TotalSkipped = 1, got %d", result.TotalSkipped)
+	}
+}
+
+func TestGetNunitDataMaps(t *testing.T) {
+	aggregateData := TestRunSummary{
+		TotalCases:   10,
+		TotalPassed:  7,
+		TotalFailed:  2,
+		TotalSkipped: 1,
+	}
+
+	tags, fields := GetNunitDataMaps("pipeline123", "build45", aggregateData)
+
+	expectedTags := map[string]string{
+		"pipelineId": "pipeline123",
+		"buildId":    "build45",
+	}
+
+	expectedFields := map[string]interface{}{
+		"total_cases":   10,
+		"total_passed":  7,
+		"total_failed":  2,
+		"total_skipped": 1,
+	}
+
+	for key, expectedValue := range expectedTags {
+		if tags[key] != expectedValue {
+			t.Errorf("Mismatch in tags: got %s = %v, expected %v", key, tags[key], expectedValue)
+		}
+	}
+
+	for key, expectedValue := range expectedFields {
+		if fields[key] != expectedValue {
+			t.Errorf("Mismatch in fields: got %s = %v, expected %v", key, fields[key], expectedValue)
+		}
+	}
+}
+
+func TestShowNunitStats(t *testing.T) {
+	tags := map[string]string{"pipelineId": "pipeline_1", "buildId": "build_123"}
+	fields := map[string]interface{}{
+		"total_cases":   100,
+		"total_passed":  80,
+		"total_failed":  10,
+		"total_skipped": 10,
+	}
+
+	var output bytes.Buffer
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := ShowNunitStats(tags, fields)
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	_, _ = output.ReadFrom(r)
+
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+
+	expectedChecks := []string{
+		"Total Cases", "100",
+		"Total Passed", "80",
+		"Total Failed", "10",
+		"Total Skipped", "10",
+	}
+
+	for i := 0; i < len(expectedChecks); i += 2 {
+		if !strings.Contains(output.String(), expectedChecks[i]) || !strings.Contains(output.String(), expectedChecks[i+1]) {
+			t.Errorf("Expected output to contain both '%s' and '%s', but got:\n%s", expectedChecks[i], expectedChecks[i+1], output.String())
+		}
+	}
 }

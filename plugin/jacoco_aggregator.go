@@ -1,11 +1,9 @@
 package plugin
 
 import (
-	"encoding/csv"
 	"encoding/xml"
 	"fmt"
 	"github.com/sirupsen/logrus"
-	"os"
 	"strings"
 )
 
@@ -79,13 +77,11 @@ func (j *JacocoAggregator) Aggregate(groupName string) error {
 		j.DbCredentials.Organization, j.DbCredentials.Bucket, JacocoTool, groupName,
 		CalculateJacocoAggregate, GetJacocoDataMaps, ShowJacocoStats)
 
-	// Metrics Data
 	err = ExportJacocoOutputVars(tagsMap, fieldsMap)
 	if err != nil {
 		logrus.Errorf("Error exporting Jacoco coverage metrics: %v", err)
 		return err
 	}
-	err = WriteJacocoMetricsCsvData(TestResultsDataFileCsv, tagsMap, fieldsMap)
 
 	return nil
 }
@@ -121,66 +117,6 @@ func ExportJacocoOutputVars(tagsMap map[string]string, fieldsMap map[string]inte
 			return err
 		}
 	}
-	return nil
-}
-
-func WriteJacocoMetricsCsvData(csvFileName string, tagsMap map[string]string, fieldsMap map[string]interface{}) error {
-	instructionCoveragePercentage := CalculatePercentage(int(fieldsMap["instruction_covered_sum"].(float64)),
-		int(fieldsMap["instruction_missed_sum"].(float64)))
-	branchCoveragePercentage := CalculatePercentage(int(fieldsMap["branch_covered_sum"].(float64)),
-		int(fieldsMap["branch_missed_sum"].(float64)))
-	lineCoveragePercentage := CalculatePercentage(int(fieldsMap["line_covered_sum"].(float64)),
-		int(fieldsMap["line_missed_sum"].(float64)))
-	complexityCoverage := CalculatePercentage(int(fieldsMap["complexity_covered_sum"].(float64)),
-		int(fieldsMap["complexity_missed_sum"].(float64)))
-	methodCoveragePercentage := CalculatePercentage(int(fieldsMap["method_covered_sum"].(float64)),
-		int(fieldsMap["method_missed_sum"].(float64)))
-	classCoveragePercentage := CalculatePercentage(int(fieldsMap["class_total_sum"].(float64)),
-		int(fieldsMap["class_missed_sum"].(float64)))
-
-	coverageData := [][]string{
-		{"Metric", "Percentage"},
-		{"INSTRUCTION_COVERAGE", fmt.Sprintf("%.2f%%", float64(instructionCoveragePercentage))},
-		{"BRANCH_COVERAGE", fmt.Sprintf("%.2f%%", float64(branchCoveragePercentage))},
-		{"LINE_COVERAGE", fmt.Sprintf("%.2f%%", float64(lineCoveragePercentage))},
-		{"COMPLEXITY_COVERAGE", fmt.Sprintf("%.2f%%", float64(complexityCoverage))},
-		{"METHOD_COVERAGE", fmt.Sprintf("%.2f%%", float64(methodCoveragePercentage))},
-		{"CLASS_COVERAGE", fmt.Sprintf("%.2f%%", float64(classCoveragePercentage))},
-	}
-
-	file, err := os.Create(csvFileName)
-	if err != nil {
-		return fmt.Errorf("failed to create CSV file: %w", err)
-	}
-	defer file.Close()
-
-	var csvBuffer strings.Builder
-	writer := csv.NewWriter(file)
-	bufferWriter := csv.NewWriter(&csvBuffer)
-
-	for _, row := range coverageData {
-		if err := writer.Write(row); err != nil {
-			return fmt.Errorf("failed to write CSV row to file: %w", err)
-		}
-		if err := bufferWriter.Write(row); err != nil {
-			return fmt.Errorf("failed to write CSV row to buffer: %w", err)
-		}
-	}
-
-	writer.Flush()
-	bufferWriter.Flush()
-
-	if err := writer.Error(); err != nil {
-		return fmt.Errorf("error flushing CSV writer to file: %w", err)
-	}
-
-	err = WriteToEnvVariable(TestResultsDataFile, csvFileName)
-	if err != nil {
-		logrus.Errorf("Error writing CSV file path to env variable: %v", err)
-		return err
-	}
-
-	logrus.Infof("Jacoco coverage metrics exported to %s and stored in JACOCO_COVERAGE_CSV env variable", csvFileName)
 	return nil
 }
 

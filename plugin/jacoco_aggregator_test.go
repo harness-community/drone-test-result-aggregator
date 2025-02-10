@@ -3,7 +3,9 @@ package plugin
 import (
 	"encoding/csv"
 	"encoding/xml"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -180,5 +182,154 @@ func TestComputeJacocoBuildResultDifferences(t *testing.T) {
 		if !strings.Contains(resultStr, expectedRow) {
 			t.Errorf("Expected row not found in result: %q", expectedRow)
 		}
+	}
+}
+
+func TestCalculateJacocoAggregate(t *testing.T) {
+	reports := []Report{
+		{
+			Counters: []Counter{
+				{Type: "INSTRUCTION", Covered: 10, Missed: 5},
+				{Type: "BRANCH", Covered: 8, Missed: 2},
+			},
+		},
+		{
+			Counters: []Counter{
+				{Type: "INSTRUCTION", Covered: 15, Missed: 10},
+				{Type: "BRANCH", Covered: 6, Missed: 4},
+			},
+		},
+	}
+
+	result := CalculateJacocoAggregate(reports)
+
+	if result.InstructionTotalSum != 40 {
+		t.Errorf("Expected InstructionTotalSum to be 40, got %f", result.InstructionTotalSum)
+	}
+	if result.InstructionCoveredSum != 25 {
+		t.Errorf("Expected InstructionCoveredSum to be 25, got %f", result.InstructionCoveredSum)
+	}
+	if result.InstructionMissedSum != 15 {
+		t.Errorf("Expected InstructionMissedSum to be 15, got %f", result.InstructionMissedSum)
+	}
+	if result.BranchTotalSum != 20 {
+		t.Errorf("Expected BranchTotalSum to be 20, got %f", result.BranchTotalSum)
+	}
+}
+
+func TestCalculatePercentage(t *testing.T) {
+	tests := []struct {
+		covered, missed int
+		expected        float64
+	}{
+		{10, 10, 50.0},
+		{0, 10, 0.0},
+		{10, 0, 100.0},
+		{0, 0, 0.0},
+	}
+
+	for _, test := range tests {
+		result := CalculatePercentage(test.covered, test.missed)
+		if result != test.expected {
+			t.Errorf("CalculatePercentage(%d, %d) = %f; want %f", test.covered, test.missed, result, test.expected)
+		}
+	}
+}
+func TestGetJacocoDataMaps(t *testing.T) {
+	report := Report{
+		JacocoAggregateData: JacocoAggregateData{ // ✅ Initialize the embedded struct properly
+			InstructionTotalSum:   50,
+			InstructionCoveredSum: 30,
+			InstructionMissedSum:  20,
+			BranchTotalSum:        40,
+			BranchCoveredSum:      25,
+			BranchMissedSum:       15,
+		},
+	}
+
+	tags, fields := GetJacocoDataMaps("pipeline123", "build45", report)
+
+	if tags["pipelineId"] != "pipeline123" {
+		t.Errorf("Expected pipelineId to be 'pipeline123', got %s", tags["pipelineId"])
+	}
+	if tags["buildId"] != "build45" {
+		t.Errorf("Expected buildId to be 'build45', got %s", tags["buildId"])
+	}
+	if fields["instruction_total_sum"].(float64) != 50 {
+		t.Errorf("Expected instruction_total_sum to be 50, got %f", fields["instruction_total_sum"].(float64))
+	}
+	if fields["branch_total_sum"].(float64) != 40 {
+		t.Errorf("Expected branch_total_sum to be 40, got %f", fields["branch_total_sum"].(float64))
+	}
+}
+
+func TestShowJacocoStats(t *testing.T) {
+	tags := map[string]string{"pipelineId": "pipe_1", "buildId": "123"}
+	fields := map[string]interface{}{
+		"instruction_total_sum":   100.0,
+		"instruction_covered_sum": 80.0,
+		"instruction_missed_sum":  20.0,
+	}
+
+	err := ShowJacocoStats(tags, fields)
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+}
+
+func MockGetPreviousBuildId(buildIds []string, currentBuildId string) (int, error) {
+	currentBuild, err := strconv.Atoi(currentBuildId)
+	if err != nil {
+		return 0, fmt.Errorf("invalid currentBuildId: %s", currentBuildId)
+	}
+
+	var builds []int
+	for _, b := range buildIds {
+		num, err := strconv.Atoi(b)
+		if err == nil {
+			builds = append(builds, num)
+		}
+	}
+
+	var prevBuild int
+	for _, id := range builds {
+		if id < currentBuild && id > prevBuild {
+			prevBuild = id
+		}
+	}
+
+	if prevBuild == 0 {
+		return 0, errors.New("no previous build ID found")
+	}
+
+	return prevBuild, nil
+}
+
+func TestMockGetPreviousBuildId(t *testing.T) {
+	tests := []struct {
+		name          string
+		buildIds      []string
+		currentBuild  string
+		expectedBuild int
+		expectErr     bool
+	}{
+		{"Valid previous build", []string{"105", "102", "100"}, "105", 102, false},
+		{"No previous build", []string{"100"}, "100", 0, true},
+		{"Invalid build in list", []string{"abc", "99"}, "100", 99, false},
+		{"Invalid currentBuildId", []string{"100", "95"}, "xyz", 0, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prevBuild, err := MockGetPreviousBuildId(tt.buildIds, tt.currentBuild)
+
+			if (err != nil) != tt.expectErr {
+				t.Errorf("Expected error: %v, got: %v", tt.expectErr, err)
+			}
+
+			if prevBuild != tt.expectedBuild {
+				t.Errorf("Expected previous build ID: %d, got: %d", tt.expectedBuild, prevBuild)
+			}
+		})
 	}
 }
