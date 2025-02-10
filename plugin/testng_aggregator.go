@@ -1,11 +1,9 @@
 package plugin
 
 import (
-	"encoding/csv"
 	"encoding/xml"
 	"fmt"
 	"github.com/sirupsen/logrus"
-	"os"
 	"strconv"
 	"strings"
 )
@@ -98,13 +96,12 @@ func (t *TestNgAggregator) Aggregate(groupName string) error {
 		return err
 	}
 
-	err = WriteTestNgMetricsCsvData(TestResultsDataFileCsv, tagsMap, fieldsMap)
+	err = ExportTestNgOutputVars(tagsMap, fieldsMap)
 	if err != nil {
-		logrus.Errorf("Error writing TestNG metrics to CSV file: %v", err)
+		logrus.Println("Error exporting TestNG output variables", err)
 		return err
 	}
 	return nil
-
 }
 
 func CalculateTestNgAggregate(testNgAggregatorList []TestNGReport) TestNGReport {
@@ -151,6 +148,23 @@ func GetTestNgDataMaps(pipelineId, buildNumber string,
 	return tags, fields
 }
 
+func ExportTestNgOutputVars(tagsMap map[string]string, fieldsMap map[string]interface{}) error {
+	outputVarsMap := map[string]interface{}{
+		"TOTAL_CASES":   fieldsMap["total_cases"],
+		"TOTAL_FAILED":  fieldsMap["total_failed"],
+		"TOTAL_SKIPPED": fieldsMap["total_skipped"],
+		"DURATION_MS":   fieldsMap["duration_ms"],
+	}
+	for key, value := range outputVarsMap {
+		err := WriteToEnvVariable(key, fmt.Sprintf("%v", value))
+		if err != nil {
+			logrus.Errorf("Error writing %s to env variable: %v", key, err)
+			return err
+		}
+	}
+	return nil
+}
+
 func aggregateSuiteResults(suite Suite) (Results, []string, []string) {
 	results := Results{}
 	var failedTests []string
@@ -194,58 +208,6 @@ func aggregateClassResults(class Class) (Results, []string, []string) {
 	}
 
 	return results, failedTests, skippedTests
-}
-
-func WriteTestNgMetricsCsvData(csvFileName string, tagsMap map[string]string, fieldsMap map[string]interface{}) error {
-	file, err := os.Create(csvFileName)
-	if err != nil {
-		return fmt.Errorf("failed to create CSV file: %w", err)
-	}
-	defer file.Close()
-
-	writer := csv.NewWriter(file)
-	var csvBuffer strings.Builder
-	bufferWriter := csv.NewWriter(&csvBuffer)
-
-	header := []string{"Pipeline ID", "Build ID", "Test Category", "Count"}
-	if err := writer.Write(header); err != nil {
-		return fmt.Errorf("failed to write CSV header to file: %w", err)
-	}
-	if err := bufferWriter.Write(header); err != nil {
-		return fmt.Errorf("failed to write CSV header to buffer: %w", err)
-	}
-
-	testNgData := [][]string{
-		{tagsMap["pipeline_id"], tagsMap["build_number"], "Total Cases", fmt.Sprintf("%d", fieldsMap["total_cases"].(int))},
-		{tagsMap["pipeline_id"], tagsMap["build_number"], "Total Failed", fmt.Sprintf("%d", fieldsMap["total_failed"].(int))},
-		{tagsMap["pipeline_id"], tagsMap["build_number"], "Total Skipped", fmt.Sprintf("%d", fieldsMap["total_skipped"].(int))},
-		{tagsMap["pipeline_id"], tagsMap["build_number"], "Total Duration (ms)", fmt.Sprintf("%.2f", fieldsMap["duration_ms"].(float64))},
-	}
-
-	for _, row := range testNgData {
-		if err := writer.Write(row); err != nil {
-			return fmt.Errorf("failed to write CSV row to file: %w", err)
-		}
-		if err := bufferWriter.Write(row); err != nil {
-			return fmt.Errorf("failed to write CSV row to buffer: %w", err)
-		}
-	}
-
-	writer.Flush()
-	bufferWriter.Flush()
-
-	if err := writer.Error(); err != nil {
-		return fmt.Errorf("error flushing CSV writer to file: %w", err)
-	}
-
-	err = WriteToEnvVariable(TestResultsDataFile, csvFileName)
-	if err != nil {
-		logrus.Errorf("Error writing CSV file path to env variable: %v", err)
-		return err
-	}
-
-	logrus.Infof("TestNG test metrics exported to %s and stored in TESTNG_METRICS_CSV_FILE env variable", csvFileName)
-	return nil
 }
 
 func ShowTestNgStats(tagsMap map[string]string, fieldsMap map[string]interface{}) error {

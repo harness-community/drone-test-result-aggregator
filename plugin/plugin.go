@@ -28,6 +28,7 @@ type Args struct {
 	DbBucket            string `envconfig:"PLUGIN_INFLUXDB_BUCKET"`
 	GroupName           string `envconfig:"PLUGIN_GROUP"`
 	CompareBuildResults bool   `envconfig:"PLUGIN_COMPARE_BUILD_RESULTS"`
+	CompareBuildId      string `envconfig:"PLUGIN_COMPARE_BUILD_ID"`
 }
 
 // Exec executes the plugin.
@@ -40,7 +41,7 @@ func Exec(ctx context.Context, args Args) error {
 		logrus.Println("error: ", err)
 		return err
 	}
-	if args.CompareBuildResults {
+	if args.CompareBuildResults || args.CompareBuildId != "" {
 		err = CompareBuildResults(args)
 		if err != nil {
 			logrus.Println("error: ", err)

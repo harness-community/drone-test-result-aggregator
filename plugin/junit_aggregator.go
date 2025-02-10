@@ -1,7 +1,6 @@
 package plugin
 
 import (
-	"encoding/csv"
 	"errors"
 	"fmt"
 	"github.com/bmatcuk/doublestar/v4"
@@ -92,9 +91,10 @@ func (j *JunitAggregator) Aggregate(groupName string) error {
 		return err
 	}
 
-	err = WriteJunitMetricsCsvData(TestResultsDataFileCsv, tagsMap, fieldsMap)
+	err = ExportJunitOutputVars(tagsMap, fieldsMap)
 	if err != nil {
-		logrus.Println("Error writing Junit metrics to CSV: ", err.Error())
+		logrus.Println("Error exporting Junit output vars: ", err.Error())
+		return err
 	}
 
 	if j.DbCredentials.InfluxDBURL != "" && j.DbCredentials.InfluxDBToken != "" &&
@@ -127,6 +127,24 @@ func GetJunitDataMaps(pipelineId, buildNumber string, aggregateData TestStats) (
 	return tags, fields
 }
 
+func ExportJunitOutputVars(tags map[string]string, fields map[string]interface{}) error {
+	outputVarsMap := map[string]interface{}{
+		"TOTAL_CASES":   fields["total_tests"],
+		"TOTAL_PASSED":  fields["passed_tests"],
+		"TOTAL_FAILED":  fields["failed_tests"],
+		"TOTAL_SKIPPED": fields["skipped_tests"],
+		"TOTAL_ERRORS":  fields["errors_count"],
+	}
+	for key, value := range outputVarsMap {
+		err := WriteToEnvVariable(key, fmt.Sprintf("%v", value))
+		if err != nil {
+			logrus.Errorf("Error writing %s to env variable: %v", key, err)
+			return err
+		}
+	}
+	return nil
+}
+
 func ShowJunitStats(tags map[string]string, fields map[string]interface{}) error {
 	border := "============================================="
 	separator := "---------------------------------------------"
@@ -152,64 +170,6 @@ func ShowJunitStats(tags map[string]string, fields map[string]interface{}) error
 	return nil
 }
 
-func WriteJunitMetricsCsvData(csvFileName string, tagsMap map[string]string, fieldsMap map[string]interface{}) error {
-	file, err := os.Create(csvFileName)
-	if err != nil {
-		return fmt.Errorf("failed to create CSV file: %w", err)
-	}
-	defer file.Close()
-
-	writer := csv.NewWriter(file)
-	var csvBuffer strings.Builder
-	bufferWriter := csv.NewWriter(&csvBuffer)
-
-	header := []string{"Pipeline ID", "Build ID", "Test Category", "Count"}
-	if err := writer.Write(header); err != nil {
-		return fmt.Errorf("failed to write CSV header to file: %w", err)
-	}
-	if err := bufferWriter.Write(header); err != nil {
-		return fmt.Errorf("failed to write CSV header to buffer: %w", err)
-	}
-
-	junitData := [][]string{
-		{tagsMap["pipelineId"], tagsMap["buildId"], "Total Cases",
-			fmt.Sprintf("%.0f", float64(fieldsMap["total_tests"].(int)))},
-		{tagsMap["pipelineId"], tagsMap["buildId"], "Total Passed",
-			fmt.Sprintf("%.0f", float64(fieldsMap["passed_tests"].(int)))},
-		{tagsMap["pipelineId"], tagsMap["buildId"], "Total Failed",
-			fmt.Sprintf("%.0f", float64(fieldsMap["failed_tests"].(int)))},
-		{tagsMap["pipelineId"], tagsMap["buildId"], "Total Skipped",
-			fmt.Sprintf("%.0f", float64(fieldsMap["skipped_tests"].(int)))},
-		{tagsMap["pipelineId"], tagsMap["buildId"], "Total Errors",
-			fmt.Sprintf("%.0f", float64(fieldsMap["errors_count"].(int)))},
-	}
-
-	for _, row := range junitData {
-		if err := writer.Write(row); err != nil {
-			return fmt.Errorf("failed to write CSV row to file: %w", err)
-		}
-		if err := bufferWriter.Write(row); err != nil {
-			return fmt.Errorf("failed to write CSV row to buffer: %w", err)
-		}
-	}
-
-	writer.Flush()
-	bufferWriter.Flush()
-
-	if err := writer.Error(); err != nil {
-		return fmt.Errorf("error flushing CSV writer to file: %w", err)
-	}
-
-	err = WriteToEnvVariable(TestResultsDataFile, csvFileName)
-	if err != nil {
-		logrus.Errorf("Error writing CSV file path to env variable: %v", err)
-		return err
-	}
-
-	logrus.Infof("JUnit test metrics exported to %s and stored in JUNIT_METRICS_CSV_FILE env variable", csvFileName)
-	return nil
-}
-
 func CompareJunitResults(tool string, args Args) (string, error) {
 	var resultStr string
 	currentPipelineId, currentBuildNumber, err := GetPipelineInfo()
@@ -218,7 +178,7 @@ func CompareJunitResults(tool string, args Args) (string, error) {
 		return resultStr, err
 	}
 
-	previousBuildId, err := GetPreviousBuildId(tool, args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket, currentPipelineId, args.GroupName, currentBuildNumber)
+	previousBuildId, err := GetPreviousBuildId(tool, args.DbUrl, args.DbToken, args.DbOrg, args.DbBucket, currentPipelineId, args.GroupName, currentBuildNumber, args)
 	if err != nil {
 		fmt.Println("CompareResults Error getting previous build id: ", err)
 		return resultStr, err
