@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"github.com/sirupsen/logrus"
+	"reflect"
 	"strconv"
 	"strings"
 )
@@ -211,25 +212,67 @@ func aggregateClassResults(class Class) (Results, []string, []string) {
 }
 
 func ShowTestNgStats(tagsMap map[string]string, fieldsMap map[string]interface{}) error {
-	border := "==================================================================="
-	separator := "-------------------------------------------------------------------"
+	borderChar := "="
+	separatorChar := "-"
 
-	table := []string{
-		border,
-		"  TestNG Test Run Summary",
-		border,
-		fmt.Sprintf("  Pipeline ID      : %-40s", tagsMap["pipelineId"]),
-		fmt.Sprintf("  Build ID         : %-40s", tagsMap["buildId"]),
-		border,
-		fmt.Sprintf("| %-22s | %-10s |", "Test Category", "Count"),
-		separator,
-		fmt.Sprintf("| 📁 Total Cases     | %10.0f    |", float64(fieldsMap["total_cases"].(int))),
-		fmt.Sprintf("| ❌ Total Failed     | %10.0f    |", float64(fieldsMap["total_failed"].(int))),
-		fmt.Sprintf("| ⏸️ Total Skipped   | %10.0f    |", float64(fieldsMap["total_skipped"].(int))),
-		fmt.Sprintf("| ⏱️ Total Duration  | %10.2f ms |", fieldsMap["duration_ms"].(float64)),
-		border,
+	fieldLabels := map[string]string{
+		"total_cases":   "📁 Total Cases",
+		"total_failed":  "❌ Total Failed",
+		"total_skipped": "🟦 Total Skipped",
+		"duration_ms":   "⏱️ Total Duration (ms) ",
 	}
 
-	fmt.Println(strings.Join(table, "\n"))
+	col1Width := len("Test Category")
+	col2Width := len("Count")
+
+	for field, label := range fieldLabels {
+		if len(label) > col1Width {
+			col1Width = len(label)
+		}
+
+		value := fieldsMap[field]
+		valueStr := getStringValue(value)
+
+		if len(valueStr) > col2Width {
+			col2Width = len(valueStr)
+		}
+	}
+
+	tableWidth := col1Width + col2Width + 7
+
+	fmt.Println(strings.Repeat(borderChar, tableWidth))
+	fmt.Println("  TestNG Test Run Summary")
+	fmt.Println(strings.Repeat(borderChar, tableWidth))
+
+	fmt.Printf("  %-15s : %s\n", "Pipeline ID", tagsMap["pipelineId"])
+	fmt.Printf("  %-15s : %s\n", "Build ID", tagsMap["buildId"])
+	fmt.Println(strings.Repeat(borderChar, tableWidth))
+
+	fmt.Printf("| %-*s | %-*s |\n", col1Width, "Test Category", col2Width, "Count")
+	fmt.Println(strings.Repeat(separatorChar, tableWidth))
+
+	for field, label := range fieldLabels {
+		value := fieldsMap[field]
+
+		if field == "duration_ms" {
+			fmt.Printf(" | %-*s | %-*s |\n", col1Width, label, col2Width, getStringValue(value))
+		} else {
+			fmt.Printf("| %-*s | %-*s |\n", col1Width, label, col2Width, getStringValue(value))
+		}
+
+	}
+
+	fmt.Println(strings.Repeat(borderChar, tableWidth))
 	return nil
+}
+
+func getStringValue(value interface{}) string {
+	switch v := value.(type) {
+	case int:
+		return fmt.Sprintf("%d", v)
+	case float64:
+		return fmt.Sprintf("%.2f", v)
+	default:
+		return fmt.Sprintf("Unknown(%s)", reflect.TypeOf(v))
+	}
 }
