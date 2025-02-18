@@ -56,8 +56,6 @@ func (n *NunitAggregator) Aggregate(groupName string) error {
 }
 
 func CalculateNunitAggregate(reports []TestRunSummary) TestRunSummary {
-	fmt.Println("CalculateNunitAggregate - Using only <test-run> summary")
-
 	totalCases, totalPassed, totalFailed, totalSkipped := 0, 0, 0, 0
 
 	for _, report := range reports {
@@ -66,9 +64,6 @@ func CalculateNunitAggregate(reports []TestRunSummary) TestRunSummary {
 		totalFailed += report.TotalFailed
 		totalSkipped += report.TotalSkipped
 	}
-
-	fmt.Printf("Summary -> Total: %d, Passed: %d, Failed: %d, Skipped: %d\n",
-		totalCases, totalPassed, totalFailed, totalSkipped)
 
 	return TestRunSummary{
 		TotalCases:   totalCases,
@@ -80,8 +75,6 @@ func CalculateNunitAggregate(reports []TestRunSummary) TestRunSummary {
 }
 
 func GetNunitDataMaps(pipelineId, buildNumber string, aggregateData TestRunSummary) (map[string]string, map[string]interface{}) {
-	fmt.Println("GetNunitDataMaps - Using only <test-run> summary")
-
 	tags := map[string]string{
 		"pipelineId": pipelineId,
 		"buildId":    buildNumber,

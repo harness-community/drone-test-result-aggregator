@@ -56,8 +56,6 @@ func (j *JunitAggregator) Aggregate(groupName string) error {
 	patterns := strings.Split(includes, ",")
 
 	for _, pattern := range patterns {
-		logrus.Println("junit: pattern ==  ", pattern)
-		logrus.Println("junit: reportsRootDir ==  ", reportsRootDir)
 		tmpReportDir := os.DirFS(reportsRootDir)
 		relPattern := strings.TrimPrefix(pattern, reportsRootDir+"/")
 
@@ -224,14 +222,6 @@ func ParseTests(paths []string, log *logrus.Logger) (TestStats, error) {
 				}
 			}
 		}
-		log.WithFields(logrus.Fields{
-			"file":    file,
-			"total":   fileStats.TestCount,
-			"passed":  fileStats.PassCount,
-			"failed":  fileStats.FailCount,
-			"skipped": fileStats.SkippedCount,
-			"errors":  fileStats.ErrorCount,
-		}).Infoln("File processed")
 
 		// Aggregate stats
 		stats.TestCount += fileStats.TestCount
@@ -381,14 +371,6 @@ func ParseTestsWithQuarantine(paths []string, quarantineList map[string]interfac
 				}
 			}
 		}
-		log.WithFields(logrus.Fields{
-			"file":    file,
-			"total":   fileStats.TestCount,
-			"passed":  fileStats.PassCount,
-			"failed":  fileStats.FailCount,
-			"skipped": fileStats.SkippedCount,
-			"errors":  fileStats.ErrorCount,
-		}).Infoln("File processed")
 
 		stats.TestCount += fileStats.TestCount
 		stats.PassCount += fileStats.PassCount

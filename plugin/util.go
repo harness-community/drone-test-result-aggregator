@@ -84,8 +84,6 @@ func GetXmlReportData[T any](reportsRootDir string, patterns []string) ([]T, err
 	var xmlFileReportDataList []T
 
 	for _, pattern := range patterns {
-		logrus.Println("junit: pattern ==  ", pattern)
-		logrus.Println("junit: reportsRootDir ==  ", reportsRootDir)
 		tmpReportDir := os.DirFS(reportsRootDir)
 		relPattern := strings.TrimPrefix(pattern, reportsRootDir+"/")
 		filesList, err := doublestar.Glob(tmpReportDir, relPattern)
@@ -96,11 +94,7 @@ func GetXmlReportData[T any](reportsRootDir string, patterns []string) ([]T, err
 		xmlReportFiles = append(xmlReportFiles, filesList...)
 	}
 
-	logrus.Println("xmlReportFiles ==  ", xmlReportFiles)
-	logrus.Println("len(xmlReportFiles) ", len(xmlReportFiles))
-
 	for _, xmlReportFile := range xmlReportFiles {
-		logrus.Println("Processing junit result file: ", xmlReportFile)
 		tmpXmlReportFile := filepath.Join(reportsRootDir, xmlReportFile)
 		report := ParseXmlReport[T](tmpXmlReportFile)
 		reportBytes, err := json.Marshal(report)
@@ -145,9 +139,9 @@ func Aggregate[T any](reportsDir, includes string,
 	dbUrl, dbToken, dbOrg, dbBucket, measurementName, groupName string,
 	calculateAggregate func(testNgAggregatorList []T) T,
 	getDataMaps func(pipelineId,
-	buildNumber string, aggregateData T) (map[string]string, map[string]interface{}),
+		buildNumber string, aggregateData T) (map[string]string, map[string]interface{}),
 	showBuildStats func(tagsMap map[string]string,
-	fieldsMap map[string]interface{}) error) (map[string]string, map[string]interface{}, error) {
+		fieldsMap map[string]interface{}) error) (map[string]string, map[string]interface{}, error) {
 
 	tagsMap := map[string]string{}
 	fieldsMap := map[string]interface{}{}
