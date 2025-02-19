@@ -1,0 +1,7 @@
+.env
+release/
+.env
+release/
+.idea/
+drone-test-result-aggregator
+
